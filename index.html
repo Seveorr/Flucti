@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Flucti</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+
+    <!-- Pantalla 1: inicio -->
+    <section class="screen home" id="inicio" aria-label="Inicio">
+      <div class="clock">
+        <time class="time" id="time" aria-live="off">
+          <span id="time-hm">--:--</span><span class="time-s" id="time-s">:--</span>
+        </time>
+        <p class="greeting" id="greeting"></p>
+      </div>
+
+      <a class="scroll-hint" href="#tareas" aria-label="Ver tareas">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M6 9l6 6 6-6"/>
+        </svg>
+      </a>
+    </section>
+
+    <!-- Pantalla 2: lista de tareas -->
+    <section class="screen tasks" id="tareas" aria-labelledby="tasks-title">
+      <div class="tasks-inner">
+        <h2 class="tasks-title" id="tasks-title">Tareas</h2>
+
+        <form class="add" id="add-form" autocomplete="off">
+          <label class="visually-hidden" for="task-input">Nombre de la tarea</label>
+          <input class="add-input" id="task-input" type="text" maxlength="120" placeholder="Nombre de la tarea">
+          <button class="add-btn" type="submit">Añadir</button>
+        </form>
+
+        <ul class="list" id="task-list"></ul>
+
+        <p class="empty" id="empty" hidden>No tienes tareas pendientes. Escribe una arriba y pulsa Añadir.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,369 @@
+/* ==========================================================================
+   style.css — hoja de estilos compartida de todo el proyecto
+   1. Tokens   2. Base   3. Pantallas   4. Reloj   5. Tareas
+   ========================================================================== */
+
+/* 1. Tokens ---------------------------------------------------------------- */
+:root {
+  /* Tipografía */
+  --font: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --text-s: 0.875rem;
+  --text-m: 1rem;
+  --text-l: 1.25rem;
+  --text-xl: 1.75rem;
+  --text-time: clamp(3.25rem, 14vw, 9rem);
+
+  /* Forma y espacio */
+  --radius-s: 4px;
+  --radius-m: 10px;
+  --space-s: 0.75rem;
+  --space-m: 1.5rem;
+  --space-l: 3rem;
+
+  /* Movimiento */
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* 🎨 Paletas de colores según el estado del cielo */
+body {
+  transition: background 1.2s var(--ease), color 1.2s var(--ease);
+}
+
+body[data-sky="night"] {
+  --bg: #0b0f19;
+  --surface: #131b2e;
+  --ink: #e2e8f0;
+  --muted: #64748b;
+  --line: #1e293b;
+  --accent: #6366f1;
+  --accent-ink: #ffffff;
+}
+
+body[data-sky="dawn"] {
+  --bg: #1c1427;
+  --surface: #291f3d;
+  --ink: #f3e8ff;
+  --muted: #a78bfa;
+  --line: #3b2d54;
+  --accent: #c084fc;
+  --accent-ink: #1c1427;
+}
+
+body[data-sky="morning"] {
+  --bg: #e0f2fe;
+  --surface: #ffffff;
+  --ink: #0f172a;
+  --muted: #64748b;
+  --line: #bae6fd;
+  --accent: #0284c7;
+  --accent-ink: #ffffff;
+}
+
+body[data-sky="noon"] {
+  --bg: #eff6ff;
+  --surface: #ffffff;
+  --ink: #1e293b;
+  --muted: #64748b;
+  --line: #dbeafe;
+  --accent: #2563eb;
+  --accent-ink: #ffffff;
+}
+
+body[data-sky="afternoon"] {
+  --bg: #fef3c7;
+  --surface: #fffbeb;
+  --ink: #78350f;
+  --muted: #b45309;
+  --line: #fde68a;
+  --accent: #d97706;
+  --accent-ink: #fffbeb;
+}
+
+body[data-sky="sunset"] {
+  --bg: #2e1065;
+  --surface: #3b0764;
+  --ink: #fae8ff;
+  --muted: #d8b4fe;
+  --line: #581c87;
+  --accent: #f43f5e;
+  --accent-ink: #ffffff;
+}
+
+/* 2. Base ------------------------------------------------------------------ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  overscroll-behavior-y: none;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* Edge antiguo */
+}
+
+html::-webkit-scrollbar {
+  display: none; /* Chrome, Safari */
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: var(--text-m);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 3. Pantallas ------------------------------------------------------------- */
+.screen {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.home {
+  position: relative;
+  display: grid;
+  place-items: center;
+  padding: var(--space-m);
+}
+
+.scroll-hint {
+  position: absolute;
+  bottom: calc(var(--space-m) + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  translate: -50% 0;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  color: var(--muted);
+  border-radius: 50%;
+  transition: color 0.2s var(--ease);
+}
+
+.scroll-hint:hover {
+  color: var(--ink);
+}
+
+/* 4. Reloj ----------------------------------------------------------------- */
+.clock {
+  text-align: center;
+}
+
+.time {
+  display: block;
+  font-size: var(--text-time);
+  font-weight: 200;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.time-s {
+  color: var(--muted);
+}
+
+.greeting {
+  margin: var(--space-m) 0 0;
+  font-size: var(--text-l);
+  font-weight: 500;
+}
+
+/* 5. Tareas ---------------------------------------------------------------- */
+.tasks-inner {
+  width: min(100% - 2.5rem, 32rem);
+  margin-inline: auto;
+  padding-top: calc(var(--space-l) + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(var(--space-l) + env(safe-area-inset-bottom, 0px));
+}
+
+.tasks-title {
+  margin: 0 0 var(--space-m);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Añadir tarea */
+.add {
+  display: flex;
+  gap: var(--space-s);
+}
+
+.add-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.75rem 1rem;
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+}
+
+.add-input::placeholder {
+  color: var(--muted);
+}
+
+.add-btn {
+  padding: 0.75rem 1.25rem;
+  font: inherit;
+  font-weight: 500;
+  color: var(--bg);
+  background: var(--ink);
+  border: 0;
+  border-radius: var(--radius-m);
+  cursor: pointer;
+  transition: opacity 0.2s var(--ease);
+}
+
+.add-btn:hover {
+  opacity: 0.85;
+}
+
+/* Lista */
+.list {
+  margin: var(--space-m) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.3s var(--ease), opacity 0.3s var(--ease);
+}
+
+.task.entering {
+  animation: task-in 0.3s var(--ease);
+}
+
+.task.leaving {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.task-row {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.task-content {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.9rem 0.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.task-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  transition: color 0.2s var(--ease);
+}
+
+/* Cuadrado para tachar */
+.check {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: none;
+  display: grid;
+  place-content: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  margin: 0;
+  background: transparent;
+  border: 1.5px solid var(--muted);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  transition: background-color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.check::after {
+  content: "";
+  width: 0.65rem;
+  height: 0.33rem;
+  border-left: 2px solid var(--accent-ink);
+  border-bottom: 2px solid var(--accent-ink);
+  transform: translate(0.5px, -1px) rotate(-45deg) scale(0);
+  transition: transform 0.15s var(--ease);
+}
+
+.check:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.check:checked::after {
+  transform: translate(0.5px, -1px) rotate(-45deg) scale(1);
+}
+
+.task.done .check {
+  pointer-events: none;
+}
+
+.task.done .task-name {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.empty {
+  margin: var(--space-l) 0 0;
+  color: var(--muted);
+  text-align: center;
+}
+
+@keyframes task-in {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+  to {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+}
+
+@media (pointer: coarse) {
+  .check {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
