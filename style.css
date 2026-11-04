@@ -32,6 +32,7 @@
   --line: #dbeafe;
   --accent: #2563eb;
   --accent-ink: #ffffff;
+  --sheet: #e2e9f3; /* hoja de tareas: el fondo mezclado un 7 % con el texto */
 }
 
 /* 🎨 Paletas del cielo
@@ -132,6 +133,7 @@ body {
   height: 2.75rem;
   color: var(--muted);
   border-radius: 50%;
+  z-index: 2;
   transition: color 0.2s var(--ease);
 }
 
@@ -158,12 +160,45 @@ body {
 }
 
 .greeting {
-  margin: var(--space-m) 0 0;
+  margin: 0 0 var(--space-s);
   font-size: var(--text-l);
   font-weight: 500;
 }
 
+.date {
+  margin: var(--space-m) 0 0;
+  font-size: var(--text-m);
+  color: var(--muted);
+}
+
 /* 5. Tareas ---------------------------------------------------------------- */
+/* Hoja de tareas: rectángulo de ancho completo con esquinas superiores redondeadas.
+   Empieza a la altura de la flecha (asoma en la pantalla de inicio) y llega al borde inferior. */
+.tasks {
+  --peek: calc(var(--space-m) + 2.75rem + 0.5rem + env(safe-area-inset-bottom, 0px));
+  position: relative;
+  margin-top: calc(-1 * var(--peek));
+}
+
+.tasks::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1; /* por encima del canvas del clima (z-index 0), que así queda tapado; por debajo del contenido (z-index 2) */
+  background: var(--sheet);
+  border-radius: 1.75rem 1.75rem 0 0;
+}
+
+body.ready .tasks::before {
+  transition: background-color 1.2s var(--ease);
+}
+
+.clock,
+.tasks-inner {
+  position: relative;
+  z-index: 2;
+}
+
 .tasks-inner {
   width: min(100% - 2.5rem, 32rem);
   margin-inline: auto;
@@ -176,6 +211,14 @@ body {
   font-size: var(--text-xl);
   font-weight: 600;
   letter-spacing: -0.01em;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.3s var(--ease), transform 0.3s var(--ease);
+}
+
+.tasks.open .tasks-title {
+  opacity: 1;
+  transform: none;
 }
 
 /* Añadir tarea */
@@ -346,9 +389,4 @@ body {
   height: 100%;
   pointer-events: none;
   z-index: 0;
-}
-
-main {
-  position: relative;
-  z-index: 1;
 }

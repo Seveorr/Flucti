@@ -390,6 +390,7 @@
     root.style.setProperty("--line", hex.line);
     root.style.setProperty("--accent", hex.accent);
     root.style.setProperty("--accent-ink", hex.accentInk);
+    root.style.setProperty("--sheet", labToHex(mixLab(colors.bg, colors.ink, 0.07)));
     root.style.colorScheme = colors.bg[0] < 0.6 ? "dark" : "light";
     fx.setInk(hex.ink, colors.bg[0] < 0.6);
 
@@ -605,6 +606,7 @@
   const hmEl = document.getElementById("time-hm");
   const sEl = document.getElementById("time-s");
   const greetingEl = document.getElementById("greeting");
+  const dateEl = document.getElementById("date");
 
   let lastMinute = -1;
 
@@ -617,6 +619,11 @@
 
     hmEl.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
     sEl.textContent = `:${pad(now.getSeconds())}`;
+
+    // "Miércoles, 4 de noviembre de 2026"
+    const date = now.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    const dateText = date.charAt(0).toUpperCase() + date.slice(1);
+    if (dateEl.textContent !== dateText) dateEl.textContent = dateText;
 
     // El cielo se recalcula cada minuto (o al cambiar la ubicación).
     const minute = Math.floor(now.getTime() / 60000);
@@ -861,6 +868,12 @@
     event.preventDefault();
     goDown();
   });
+
+  // El título "Tareas" aparece al pasar de la mitad del recorrido hacia las tareas.
+  const updateOpen = () => tasksSection.classList.toggle("open", window.scrollY > tasksTop() * 0.5);
+  window.addEventListener("scroll", updateOpen, { passive: true });
+  window.addEventListener("resize", updateOpen);
+  updateOpen();
 
   /* ------------------------------------------------------------------------
      Inicio
