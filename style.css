@@ -180,6 +180,7 @@ body {
    Empieza a la altura de la flecha (asoma en la pantalla de inicio) y llega al borde inferior. */
 .tasks {
   --peek: calc(var(--space-m) + 2.75rem + 0.5rem + env(safe-area-inset-bottom, 0px));
+  --sheet-radius: calc(1.75rem * (1 - var(--progress, 0))); /* se va a 0 al bajar a las tareas */
   position: relative;
   margin-top: calc(-1 * var(--peek));
 }
@@ -190,7 +191,7 @@ body {
   inset: 0;
   z-index: 1; /* por encima del canvas del clima (z-index 0), que así queda tapado; por debajo del contenido (z-index 2) */
   background: var(--sheet);
-  border-radius: 1.75rem 1.75rem 0 0;
+  border-radius: var(--sheet-radius) var(--sheet-radius) 0 0;
 }
 
 body.ready .tasks::before {
@@ -206,7 +207,7 @@ body.ready .tasks::before {
 .tasks-inner {
   width: min(100% - 2.5rem, 32rem);
   margin-inline: auto;
-  padding-top: calc(var(--space-l) + env(safe-area-inset-top, 0px));
+  padding-top: calc(4.5rem + env(safe-area-inset-top, 0px)); /* deja sitio a la franja de botones */
   padding-bottom: calc(var(--space-l) + env(safe-area-inset-bottom, 0px));
 }
 
@@ -393,4 +394,90 @@ body.ready .tasks::before {
   height: 100%;
   pointer-events: none;
   z-index: 0;
+}
+
+/* 7. Franja superior de la hoja: menú e idioma, a la altura de la flecha ---- */
+.topbar {
+  position: absolute;
+  z-index: 3;
+  top: calc(0.5rem + env(safe-area-inset-top, 0px) * var(--progress, 0));
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  padding-inline: calc(var(--space-s) + env(safe-area-inset-left, 0px)) calc(var(--space-s) + env(safe-area-inset-right, 0px));
+  pointer-events: none; /* no tapa la flecha del centro */
+}
+
+.topbar .icon-btn {
+  pointer-events: auto;
+}
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  font: inherit;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: color 0.2s var(--ease), background-color 0.2s var(--ease);
+}
+
+.icon-btn:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.lang-btn {
+  font-size: var(--text-s);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* 8. Ventana del menú ------------------------------------------------------ */
+html.modal-open {
+  overflow: hidden;
+}
+
+.modal {
+  width: min(100% - 2.5rem, 28rem);
+  min-height: 14rem;
+  padding: 0;
+  color: var(--ink);
+  background: var(--surface);
+  border: 0;
+  border-radius: 1.25rem;
+}
+
+.modal[open] {
+  animation: modal-in 0.2s var(--ease);
+}
+
+.modal::backdrop {
+  background: rgb(0 0 0 / 0.45);
+  backdrop-filter: blur(4px);
+}
+
+.modal-body {
+  position: relative;
+  min-height: 14rem;
+  padding: var(--space-m);
+}
+
+.modal-close {
+  position: absolute;
+  top: var(--space-s);
+  right: var(--space-s);
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
 }

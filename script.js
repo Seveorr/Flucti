@@ -335,6 +335,7 @@
      ------------------------------------------------------------------------ */
   const NIGHT_END = -12; // por debajo de esta altura es noche cerrada
   const GOLD_TOP = 6; // última parada de la hora dorada
+  const BLUE_HOUR_TOP = -4; // por debajo empieza la hora azul
   const DAY_BLEND_END = 14; // a partir de aquí manda la paleta del día
 
   const DAY_STOPS = [
@@ -412,8 +413,32 @@
       colors = blend(colors, dayColors(dayFraction), smoothstep((elevation - GOLD_TOP) / (DAY_BLEND_END - GOLD_TOP)));
     }
 
-    const greeting = elevation > SUN_HORIZON ? (morning ? "Buenos días" : "Buenas tardes") : "Buenas noches";
-    return { greeting, colors: withWeather(colors, elevation) };
+    const greetingKey = elevation > SUN_HORIZON ? (morning ? "greeting.morning" : "greeting.afternoon") : "greeting.night";
+    const phase = elevation > GOLD_TOP ? "day" : elevation > BLUE_HOUR_TOP ? "gold" : elevation > NIGHT_END ? "blue" : "night";
+    return { greetingKey, phase, colors: withWeather(colors, elevation) };
+  }
+
+  // Favicon: un círculo de color según la fase del día (azul, naranja, violeta, negro).
+  const FAVICON_EMOJI = { day: "🔵", gold: "🟠", blue: "🟣", night: "⚫" };
+  const faviconLink = document.getElementById("favicon");
+  let faviconEmoji = null;
+
+  function setFavicon(emoji) {
+    if (emoji === faviconEmoji || !faviconLink) return;
+    faviconEmoji = emoji;
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 64;
+      const ctx = canvas.getContext("2d");
+      ctx.font = '52px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(emoji, 32, 36);
+      faviconLink.type = "image/png";
+      faviconLink.href = canvas.toDataURL("image/png");
+    } catch {
+      /* Si el navegador no puede generarlo, se deja el favicon anterior. */
+    }
   }
 
   let themeMeta = null;
@@ -641,6 +666,85 @@
   })();
 
   /* ------------------------------------------------------------------------
+     Idioma y menú
+     Los textos viven en languages.js (LANGUAGES y TRANSLATIONS). Los elementos del
+     HTML usan data-i18n, data-i18n-aria-label y data-i18n-placeholder.
+     ------------------------------------------------------------------------ */
+  const LANGUAGE_KEY = "language:v1";
+  const languageBtn = document.getElementById("language-btn");
+  const languageCodeEl = document.getElementById("language-code");
+  const menuBtn = document.getElementById("menu-btn");
+  const menuDialog = document.getElementById("menu-dialog");
+  const menuClose = document.getElementById("menu-close");
+
+  function detectLanguage() {
+    try {
+      const saved = localStorage.getItem(LANGUAGE_KEY);
+      if (LANGUAGES.some((l) => l.code === saved)) return saved;
+    } catch {
+      /* se ignora */
+    }
+    const browser = (navigator.language || "").slice(0, 2).toLowerCase();
+    return LANGUAGES.some((l) => l.code === browser) ? browser : LANGUAGES[0].code;
+  }
+
+  let language = detectLanguage();
+  const currentLanguage = () => LANGUAGES.find((l) => l.code === language) || LANGUAGES[0];
+
+  // Devuelve el texto de una clave en el idioma actual (o en el primero de la lista si falta).
+  function t(key, params) {
+    const entry = TRANSLATIONS[key];
+    let text = (entry && (entry[language] || entry[LANGUAGES[0].code])) || key;
+    if (params) for (const [name, value] of Object.entries(params)) text = text.replaceAll(`{${name}}`, value);
+    return text;
+  }
+
+  function applyStaticTranslations() {
+    const current = currentLanguage();
+    document.documentElement.lang = current.code;
+    document.title = t("app.title");
+
+    document.querySelectorAll("[data-i18n]").forEach((el) => (el.textContent = t(el.dataset.i18n)));
+    document.querySelectorAll("[data-i18n-aria-label]").forEach((el) => el.setAttribute("aria-label", t(el.dataset.i18nAriaLabel)));
+    document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => el.setAttribute("placeholder", t(el.dataset.i18nPlaceholder)));
+
+    languageCodeEl.textContent = current.label;
+    languageBtn.setAttribute("aria-label", t("language.change", { language: current.name }));
+
+    document.querySelectorAll(".task").forEach((item) => {
+      const name = item.querySelector(".task-name").textContent;
+      item.querySelector(".check").setAttribute("aria-label", t("task.complete", { name }));
+    });
+  }
+
+  function setLanguage(code) {
+    language = code;
+    try {
+      localStorage.setItem(LANGUAGE_KEY, code);
+    } catch {
+      /* Sin almacenamiento disponible */
+    }
+    applyStaticTranslations();
+    updateClock(); // actualiza saludo y fecha al instante
+  }
+
+  languageBtn.addEventListener("click", () => {
+    const next = (LANGUAGES.indexOf(currentLanguage()) + 1) % LANGUAGES.length;
+    setLanguage(LANGUAGES[next].code);
+  });
+
+  // Ventana del menú: el <dialog> se muestra delante de todo y se cierra con Esc.
+  menuBtn.addEventListener("click", () => {
+    document.documentElement.classList.add("modal-open");
+    menuDialog.showModal();
+  });
+  menuClose.addEventListener("click", () => menuDialog.close());
+  menuDialog.addEventListener("click", (event) => {
+    if (event.target === menuDialog) menuDialog.close(); // clic fuera del contenido
+  });
+  menuDialog.addEventListener("close", () => document.documentElement.classList.remove("modal-open"));
+
+  /* ------------------------------------------------------------------------
      Reloj, saludo y fecha
      ------------------------------------------------------------------------ */
   const hoursMinutesEl = document.getElementById("time-hm");
@@ -649,6 +753,7 @@
   const dateEl = document.getElementById("date");
 
   let lastMinute = -1;
+  let greetingKey = null;
 
   function updateClock(testDate) {
     if (testState && Date.now() >= testState.until) {
@@ -661,7 +766,7 @@
     secondsEl.textContent = `:${pad(now.getSeconds())}`;
 
     // "Miércoles, 4 de noviembre de 2026"
-    const date = now.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    const date = now.toLocaleDateString(currentLanguage().locale, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
     const dateText = date.charAt(0).toUpperCase() + date.slice(1);
     if (dateEl.textContent !== dateText) dateEl.textContent = dateText;
 
@@ -672,9 +777,15 @@
       skyDirty = false;
 
       const sky = getSky(now);
-      if (greetingEl.textContent !== sky.greeting) greetingEl.textContent = sky.greeting;
+      greetingKey = sky.greetingKey;
+      setFavicon(FAVICON_EMOJI[sky.phase]);
       applyColors(sky.colors);
       fx.setWeather(activeWeather());
+    }
+
+    if (greetingKey) {
+      const greeting = t(greetingKey);
+      if (greetingEl.textContent !== greeting) greetingEl.textContent = greeting;
     }
   }
 
@@ -740,7 +851,7 @@
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.className = "check";
-    checkbox.setAttribute("aria-label", `Completar tarea: ${task.name}`);
+    checkbox.setAttribute("aria-label", t("task.complete", { name: task.name }));
 
     const name = document.createElement("span");
     name.className = "task-name";
@@ -827,7 +938,7 @@
   window.addEventListener(
     "wheel",
     (event) => {
-      if (event.ctrlKey) return;
+      if (event.ctrlKey || menuDialog.open) return;
 
       const now = performance.now();
       if (now - lastWheelTime > 200) wheelStartedAtTop = atTasksTop();
@@ -859,6 +970,7 @@
   window.addEventListener(
     "touchstart",
     (event) => {
+      if (menuDialog.open) return;
       touchStartY = event.touches[0].clientY;
       touchStartedAtTop = atTasksTop();
     },
@@ -868,6 +980,7 @@
   window.addEventListener(
     "touchmove",
     (event) => {
+      if (menuDialog.open) return;
       const swipe = touchStartY - event.touches[0].clientY; // > 0: deslizar hacia arriba
 
       if (locked || inHome()) {
@@ -887,7 +1000,7 @@
   );
 
   window.addEventListener("keydown", (event) => {
-    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (menuDialog.open || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
 
     const target = event.target;
     if (target.matches("input, textarea, select")) return;
@@ -910,8 +1023,14 @@
     goDown();
   });
 
-  // El título "Tareas" aparece al pasar de la mitad del recorrido hacia las tareas.
-  const updateOpen = () => tasksSection.classList.toggle("open", window.scrollY > tasksTop() * 0.5);
+  // --progress (0 en el inicio, 1 en las tareas) quita poco a poco el redondeo de la hoja;
+  // el título "Tareas" aparece al pasar de la mitad del recorrido.
+  function updateOpen() {
+    const top = tasksTop();
+    const progress = top > 0 ? clamp(window.scrollY / top, 0, 1) : 1;
+    tasksSection.style.setProperty("--progress", progress.toFixed(3));
+    tasksSection.classList.toggle("open", progress > 0.5);
+  }
   window.addEventListener("scroll", updateOpen, { passive: true });
   window.addEventListener("resize", updateOpen);
   updateOpen();
@@ -921,6 +1040,7 @@
      ------------------------------------------------------------------------ */
   tasks.forEach((task) => list.append(createTaskElement(task, false)));
   updateEmpty();
+  applyStaticTranslations();
   tick();
   requestPlace();
   fetchWeather(place);
