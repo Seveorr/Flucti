@@ -37,15 +37,19 @@
 
 /* 🎨 Paletas del cielo
    Orden: fondo, superficie, texto, texto atenuado, línea, acento, texto sobre acento.
-   El script las mezcla de forma continua (amanecer → mañana → mediodía → tarde →
-   atardecer → noche) según la posición real del sol en la ubicación del usuario. */
+   El script las mezcla de forma continua (noche → hora azul → hora dorada → mañana → mediodía → tarde →
+   hora dorada → hora azul → noche) según la posición real del sol en la ubicación del usuario. */
 :root {
-  --sky-night:     #0b0f19 #131b2e #e2e8f0 #64748b #1e293b #6366f1 #ffffff;
-  --sky-dawn:      #1c1427 #291f3d #f3e8ff #a78bfa #3b2d54 #c084fc #1c1427;
+  --sky-night:     #0b0f19 #131b2e #e2e8f0 #94a3b8 #1e293b #6366f1 #ffffff;
   --sky-morning:   #e0f2fe #ffffff #0f172a #64748b #bae6fd #0284c7 #ffffff;
   --sky-noon:      #eff6ff #ffffff #1e293b #64748b #dbeafe #2563eb #ffffff;
   --sky-afternoon: #fef3c7 #fffbeb #78350f #b45309 #fde68a #d97706 #fffbeb;
-  --sky-sunset:    #2e1065 #3b0764 #fae8ff #d8b4fe #581c87 #f43f5e #ffffff;
+
+  /* Hora azul y hora dorada: "altura del sol en grados:color de fondo", de la noche al día.
+     Colores tomados del arco de amanecer/atardecer de Weawow (6 nov 2026): azul profundo →
+     violeta → magenta → naranja rojizo → dorado. Sirven igual para amanecer y atardecer.
+     El resto de colores (texto, líneas…) se calculan solos a partir del fondo. */
+  --sky-twilight: -9.2:#0c1442 -7.1:#1b2e95 -5:#5430b6 -3.7:#8540ac -2.3:#b2448b -0.9:#bd5740 0.5:#bf693a 2.5:#bf803d 6:#c4883f;
 
   /* Tiempo atmosférico: se mezclan con la paleta del cielo durante el día.
      (nublado no tiene paleta: se ve igual que el cielo de la hora). */
