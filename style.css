@@ -467,6 +467,9 @@ html.modal-open {
   position: relative;
   min-height: 14rem;
   padding: var(--space-m);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end; /* las opciones de cuenta quedan abajo del todo */
 }
 
 .modal-close {
@@ -480,4 +483,172 @@ html.modal-open {
     opacity: 0;
     transform: translateY(8px) scale(0.98);
   }
+}
+
+.menu-actions {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-l);
+  border-top: 1px solid var(--line);
+}
+
+.menu-item {
+  padding: 0.9rem 0.25rem;
+  font: inherit;
+  text-align: left;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  transition: opacity 0.2s var(--ease);
+}
+
+.menu-item:last-child {
+  border-bottom: 0;
+}
+
+.menu-item:hover {
+  opacity: 0.7;
+}
+
+/* 9. Inicio de sesión: rectángulo a pantalla completa con los colores del cielo ---- */
+html.login-open {
+  overflow: hidden;
+}
+
+.login {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: var(--space-m);
+  color: var(--ink);
+  background: var(--bg);
+  text-align: center;
+}
+
+body.ready .login {
+  transition: background-color 1.2s var(--ease), color 1.2s var(--ease);
+}
+
+.login-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-s);
+  width: min(100%, 22rem);
+}
+
+.login-title {
+  margin: 0;
+  font-size: clamp(3rem, 12vw, 5.5rem);
+  font-weight: 200;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.login-text {
+  margin: 0 0 var(--space-m);
+  color: var(--muted);
+}
+
+.login-account {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-s);
+  width: 100%;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-s);
+}
+
+.field {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+}
+
+.field::placeholder {
+  color: var(--muted);
+}
+
+.primary-btn {
+  padding: 0.8rem 1.25rem;
+  font: inherit;
+  font-weight: 500;
+  color: var(--bg);
+  background: var(--ink);
+  border: 0;
+  border-radius: var(--radius-m);
+  cursor: pointer;
+  transition: opacity 0.2s var(--ease);
+}
+
+.primary-btn:hover {
+  opacity: 0.85;
+}
+
+.primary-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.link-btn {
+  padding: 0.5rem;
+  font: inherit;
+  font-size: var(--text-s);
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  color: var(--ink);
+}
+
+.login-notice {
+  margin: 0 0 var(--space-s);
+  font-size: var(--text-s);
+  color: var(--muted);
+}
+
+.login-error {
+  min-height: 1.5em;
+  margin: 0;
+  font-size: var(--text-s);
+}
+
+.text-btn {
+  padding: 0.75rem 1.25rem;
+  font: inherit;
+  font-weight: 500;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  cursor: pointer;
+  transition: opacity 0.2s var(--ease);
+}
+
+.text-btn:hover {
+  opacity: 0.7;
+}
+
+.login-lang {
+  position: absolute;
+  right: calc(var(--space-s) + env(safe-area-inset-right, 0px));
+  bottom: calc(var(--space-s) + env(safe-area-inset-bottom, 0px));
 }
