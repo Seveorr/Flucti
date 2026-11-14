@@ -1,17 +1,10 @@
-# Datos de la aplicación (cuentas, contraseñas con hash, tareas y sesiones): NUNCA se suben.
-data/
-*.sqlite
-*.sqlite-wal
-*.sqlite-shm
-*.sqlite-journal
-
-# Variables y registros locales
-.env
-.env.*
-*.log
-
 # Sistema y editor
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+
+# Variables y registros locales
+.env
+.env.*
+*.log

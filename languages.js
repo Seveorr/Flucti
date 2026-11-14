@@ -5,7 +5,8 @@
    - Cada elemento con texto de la aplicación tiene una clave en TRANSLATIONS
      y, dentro, su texto en todos los idiomas de LANGUAGES.
    - Cambia cualquier texto y se actualiza solo al recargar la página.
-   - {name}, {language}… son valores que la aplicación rellena; no los borres.
+   - {name}, {date}, {count}… son valores que la aplicación rellena; no los borres.
+   - Las claves con ".one" y ".other" son singular y plural (1 día / 2 días).
    - Para añadir un idioma: agrégalo a LANGUAGES y añade su código a cada clave.
    - Para añadir un texto nuevo: crea una clave nueva y úsala en el HTML con
      data-i18n="clave" (texto), data-i18n-aria-label="clave" o
@@ -14,7 +15,7 @@
      primer idioma de la lista.
    ========================================================================== */
 
-// "label" son las dos letras del botón; "locale" da formato a la fecha.
+// "label" son las dos letras del botón; "locale" da formato a las fechas.
 const LANGUAGES = [
   { code: "es", label: "ES", name: "Español", locale: "es-ES" },
   { code: "ca", label: "CA", name: "Català", locale: "ca-ES" },
@@ -23,21 +24,9 @@ const LANGUAGES = [
 ];
 
 const TRANSLATIONS = {
-  /* General: el nombre de la app es el mismo en todos los idiomas */
+  /* General */
   "app.title": { es: "Flucti", ca: "Flucti", en: "Flucti", de: "Flucti" },
-
-  /* Pantalla de inicio */
-  "login.label": { es: "Iniciar sesión", ca: "Inicia la sessió", en: "Sign in", de: "Anmelden" },
-  "home.label": { es: "Inicio", ca: "Inici", en: "Home", de: "Start" },
-  "greeting.morning": { es: "Buenos días", ca: "Bon dia", en: "Good morning", de: "Guten Morgen" },
-  "greeting.afternoon": { es: "Buenas tardes", ca: "Bona tarda", en: "Good afternoon", de: "Guten Tag" },
-  "greeting.night": { es: "Buenas noches", ca: "Bona nit", en: "Good evening", de: "Guten Abend" },
-  "scroll.label": { es: "Ver tareas", ca: "Veure tasques", en: "Show tasks", de: "Aufgaben anzeigen" },
-
-  /* Barra superior y menú */
-  "menu.open": { es: "Abrir menú", ca: "Obre el menú", en: "Open menu", de: "Menü öffnen" },
-  "menu.title": { es: "Menú", ca: "Menú", en: "Menu", de: "Menü" },
-  "menu.close": { es: "Cerrar", ca: "Tanca", en: "Close", de: "Schließen" },
+  "dialog.close": { es: "Cerrar", ca: "Tanca", en: "Close", de: "Schließen" },
   "language.change": {
     es: "Cambiar idioma (actual: {language})",
     ca: "Canvia l'idioma (actual: {language})",
@@ -45,130 +34,34 @@ const TRANSLATIONS = {
     de: "Sprache ändern (aktuell: {language})",
   },
 
-  /* Menú: opciones de cuenta */
-  "menu.switchAccount": { es: "Cambiar de cuenta", ca: "Canvia de compte", en: "Switch account", de: "Konto wechseln" },
-  "menu.signOut": { es: "Cerrar sesión", ca: "Tanca la sessió", en: "Sign out", de: "Abmelden" },
+  /* Pantalla de inicio */
+  "home.label": { es: "Inicio", ca: "Inici", en: "Home", de: "Start" },
+  "greeting.morning": { es: "Buenos días", ca: "Bon dia", en: "Good morning", de: "Guten Morgen" },
+  "greeting.afternoon": { es: "Buenas tardes", ca: "Bona tarda", en: "Good afternoon", de: "Guten Tag" },
+  "greeting.night": { es: "Buenas noches", ca: "Bona nit", en: "Good evening", de: "Guten Abend" },
+  "scroll.label": { es: "Ver tareas", ca: "Veure tasques", en: "Show tasks", de: "Aufgaben anzeigen" },
 
-  /* Inicio de sesión y cuentas */
-  "login.text": {
-    es: "Inicia sesión para continuar",
-    ca: "Inicia la sessió per continuar",
-    en: "Sign in to continue",
-    de: "Melde dich an, um fortzufahren",
-  },
-  "login.textRegister": {
-    es: "Crea tu cuenta para continuar",
-    ca: "Crea el teu compte per continuar",
-    en: "Create your account to continue",
-    de: "Erstelle dein Konto, um fortzufahren",
-  },
-  "login.email": { es: "Correo electrónico", ca: "Correu electrònic", en: "Email", de: "E-Mail" },
-  "login.password": { es: "Contraseña", ca: "Contrasenya", en: "Password", de: "Passwort" },
-  "login.confirm": {
-    es: "Repite la contraseña",
-    ca: "Repeteix la contrasenya",
-    en: "Repeat password",
-    de: "Passwort wiederholen",
-  },
-  "login.signIn": { es: "Iniciar sesión", ca: "Inicia la sessió", en: "Sign in", de: "Anmelden" },
-  "login.register": { es: "Crear cuenta", ca: "Crea el compte", en: "Create account", de: "Konto erstellen" },
-  "login.toRegister": {
-    es: "¿No tienes cuenta? Crear cuenta",
-    ca: "No tens compte? Crea'n un",
-    en: "No account yet? Create one",
-    de: "Noch kein Konto? Jetzt erstellen",
-  },
-  "login.toSignIn": {
-    es: "¿Ya tienes cuenta? Iniciar sesión",
-    ca: "Ja tens compte? Inicia la sessió",
-    en: "Already have an account? Sign in",
-    de: "Schon ein Konto? Anmelden",
-  },
-  "login.back": { es: "Volver", ca: "Torna", en: "Back", de: "Zurück" },
-  "login.dev": {
-    es: "Entrar en modo de desarrollo",
-    ca: "Entra en mode de desenvolupament",
-    en: "Continue in development mode",
-    de: "Im Entwicklungsmodus fortfahren",
-  },
-  "login.noServer": {
-    es: "No hay servidor configurado: la app funciona solo en este dispositivo.",
-    ca: "No hi ha cap servidor configurat: l'aplicació funciona només en aquest dispositiu.",
-    en: "No server is set up: the app works on this device only.",
-    de: "Es ist kein Server eingerichtet: Die App funktioniert nur auf diesem Gerät.",
-  },
-  "login.fileProtocol": {
-    es: "Para iniciar sesión, abre la app desde https o desde localhost, no como archivo.",
-    ca: "Per iniciar la sessió, obre l'aplicació des d'https o des de localhost, no com a arxiu.",
-    en: "To sign in, open the app from https or localhost, not as a file.",
-    de: "Zum Anmelden öffne die App über https oder localhost, nicht als Datei.",
-  },
-  "login.expired": {
-    es: "Tu sesión ha caducado. Vuelve a iniciar sesión.",
-    ca: "La teva sessió ha caducat. Torna a iniciar la sessió.",
-    en: "Your session has expired. Please sign in again.",
-    de: "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.",
-  },
-  "login.error.credentials": {
-    es: "Correo o contraseña incorrectos.",
-    ca: "Correu o contrasenya incorrectes.",
-    en: "Incorrect email or password.",
-    de: "E-Mail oder Passwort falsch.",
-  },
-  "login.error.emailTaken": {
-    es: "Ya existe una cuenta con ese correo.",
-    ca: "Ja existeix un compte amb aquest correu.",
-    en: "An account with this email already exists.",
-    de: "Es gibt bereits ein Konto mit dieser E-Mail.",
-  },
-  "login.error.tooMany": {
-    es: "Demasiados intentos. Espera unos minutos y vuelve a probar.",
-    ca: "Massa intents. Espera uns minuts i torna-ho a provar.",
-    en: "Too many attempts. Wait a few minutes and try again.",
-    de: "Zu viele Versuche. Warte ein paar Minuten und versuche es erneut.",
-  },
-  "login.error.invalidEmail": {
-    es: "Escribe un correo electrónico válido.",
-    ca: "Escriu un correu electrònic vàlid.",
-    en: "Enter a valid email address.",
-    de: "Gib eine gültige E-Mail-Adresse ein.",
-  },
-  "login.error.weakPassword": {
-    es: "La contraseña debe tener al menos 8 caracteres.",
-    ca: "La contrasenya ha de tenir almenys 8 caràcters.",
-    en: "The password must have at least 8 characters.",
-    de: "Das Passwort muss mindestens 8 Zeichen haben.",
-  },
-  "login.error.passwordTooLong": {
-    es: "La contraseña es demasiado larga (máximo unos 72 caracteres).",
-    ca: "La contrasenya és massa llarga (màxim uns 72 caràcters).",
-    en: "The password is too long (about 72 characters at most).",
-    de: "Das Passwort ist zu lang (höchstens etwa 72 Zeichen).",
-  },
-  "login.error.mismatch": {
-    es: "Las contraseñas no coinciden.",
-    ca: "Les contrasenyes no coincideixen.",
-    en: "The passwords don't match.",
-    de: "Die Passwörter stimmen nicht überein.",
-  },
-  "login.error.network": {
-    es: "No se pudo conectar con el servidor. Comprueba tu conexión e inténtalo de nuevo.",
-    ca: "No s'ha pogut connectar amb el servidor. Comprova la connexió i torna-ho a provar.",
-    en: "Couldn't reach the server. Check your connection and try again.",
-    de: "Der Server ist nicht erreichbar. Prüfe deine Verbindung und versuche es erneut.",
-  },
-  "login.error.server": {
-    es: "El servidor no respondió correctamente. Inténtalo más tarde.",
-    ca: "El servidor no ha respost correctament. Torna-ho a provar més tard.",
-    en: "The server didn't respond correctly. Please try again later.",
-    de: "Der Server hat nicht richtig geantwortet. Bitte versuche es später erneut.",
-  },
+  /* Listas (en la pantalla de inicio y en la hoja de tareas) */
+  "list.default": { es: "Actual", ca: "Actual", en: "Current", de: "Aktuell" },
+  "lists.label": { es: "Listas", ca: "Llistes", en: "Lists", de: "Listen" },
+  "list.add": { es: "Crear lista", ca: "Crea una llista", en: "Create list", de: "Liste erstellen" },
+  "list.new.placeholder": { es: "Nueva lista", ca: "Nova llista", en: "New list", de: "Neue Liste" },
+  "list.options": { es: "Opciones de la lista", ca: "Opcions de la llista", en: "List options", de: "Listenoptionen" },
 
-  /* Lista de tareas */
-  "tasks.title": { es: "Tareas", ca: "Tasques", en: "Tasks", de: "Aufgaben" },
+  /* Barra superior y ajustes */
+  "menu.open": { es: "Abrir ajustes", ca: "Obre els ajustos", en: "Open settings", de: "Einstellungen öffnen" },
+  "menu.title": { es: "Ajustes", ca: "Ajustos", en: "Settings", de: "Einstellungen" },
+
+  /* Hoja de tareas */
   "task.input.label": { es: "Nombre de la tarea", ca: "Nom de la tasca", en: "Task name", de: "Name der Aufgabe" },
   "task.input.placeholder": { es: "Nombre de la tarea", ca: "Nom de la tasca", en: "Task name", de: "Name der Aufgabe" },
-  "task.add": { es: "Añadir", ca: "Afegeix", en: "Add", de: "Hinzufügen" },
+  "task.save": { es: "Guardar tarea", ca: "Desa la tasca", en: "Save task", de: "Aufgabe speichern" },
+  "task.params": {
+    es: "Parámetros de la tarea",
+    ca: "Paràmetres de la tasca",
+    en: "Task parameters",
+    de: "Aufgabenparameter",
+  },
   "task.complete": {
     es: "Completar tarea: {name}",
     ca: "Completa la tasca: {name}",
@@ -176,10 +69,158 @@ const TRANSLATIONS = {
     de: "Aufgabe erledigen: {name}",
   },
   "task.empty": {
-    es: "No tienes tareas pendientes. Escribe una arriba y pulsa Añadir.",
-    ca: "No tens tasques pendents. Escriu-ne una a dalt i prem Afegeix.",
-    en: "You have no pending tasks. Type one above and press Add.",
-    de: "Du hast keine offenen Aufgaben. Schreibe oben eine und drücke Hinzufügen.",
+    es: "No hay tareas pendientes en esta lista. Escribe una arriba y pulsa +.",
+    ca: "No hi ha tasques pendents en aquesta llista. Escriu-ne una a dalt i prem +.",
+    en: "No pending tasks in this list. Type one above and press +.",
+    de: "Keine offenen Aufgaben in dieser Liste. Schreibe oben eine und drücke +.",
+  },
+
+  /* Ventana de la tarea */
+  "task.dialog.new": { es: "Nueva tarea", ca: "Nova tasca", en: "New task", de: "Neue Aufgabe" },
+  "task.kind.label": { es: "Tipo de tarea", ca: "Tipus de tasca", en: "Task type", de: "Aufgabentyp" },
+  "kind.once": { es: "Única", ca: "Única", en: "One-time", de: "Einmalig" },
+  "kind.recurring": { es: "Recurrente", ca: "Recurrent", en: "Recurring", de: "Wiederkehrend" },
+  "task.saveButton": { es: "Guardar", ca: "Desa", en: "Save", de: "Speichern" },
+  "task.error.required": {
+    es: "Completa los campos obligatorios (*).",
+    ca: "Completa els camps obligatoris (*).",
+    en: "Fill in the required fields (*).",
+    de: "Fülle die Pflichtfelder (*) aus.",
+  },
+  "field.clear": { es: "Quitar", ca: "Treu", en: "Clear", de: "Entfernen" },
+  "field.date": { es: "Fecha", ca: "Data", en: "Date", de: "Datum" },
+  "field.time": { es: "Hora (opcional)", ca: "Hora (opcional)", en: "Time (optional)", de: "Uhrzeit (optional)" },
+  "field.none": { es: "—", ca: "—", en: "—", de: "—" },
+
+  /* Nombres de los parámetros que trae la app */
+  "param.title": { es: "Título", ca: "Títol", en: "Title", de: "Titel" },
+  "param.description": { es: "Descripción", ca: "Descripció", en: "Description", de: "Beschreibung" },
+  "param.due": { es: "Fecha de vencimiento", ca: "Data de venciment", en: "Due date", de: "Fälligkeitsdatum" },
+  "param.date": { es: "Fecha", ca: "Data", en: "Date", de: "Datum" },
+  "param.repeat": { es: "Repetición", ca: "Repetició", en: "Repeat", de: "Wiederholung" },
+  "param.planned": { es: "Fecha de planificación", ca: "Data de planificació", en: "Planned date", de: "Geplantes Datum" },
+  "param.energy": { es: "Energía", ca: "Energia", en: "Energy", de: "Energie" },
+  "energy.high": { es: "Alta", ca: "Alta", en: "High", de: "Hoch" },
+  "energy.medium": { es: "Media", ca: "Mitjana", en: "Medium", de: "Mittel" },
+  "energy.low": { es: "Baja", ca: "Baixa", en: "Low", de: "Niedrig" },
+
+  /* Tipos de parámetro */
+  "type.text": { es: "Texto", ca: "Text", en: "Text", de: "Text" },
+  "type.textarea": { es: "Texto largo", ca: "Text llarg", en: "Long text", de: "Langer Text" },
+  "type.number": { es: "Número", ca: "Número", en: "Number", de: "Zahl" },
+  "type.date": {
+    es: "Fecha (hora opcional)",
+    ca: "Data (hora opcional)",
+    en: "Date (optional time)",
+    de: "Datum (Uhrzeit optional)",
+  },
+  "type.select": { es: "Lista desplegable", ca: "Llista desplegable", en: "Dropdown list", de: "Dropdown-Liste" },
+  "type.checkbox": { es: "Sí / No", ca: "Sí / No", en: "Yes / No", de: "Ja / Nein" },
+  "type.recurrence": { es: "Regla de repetición", ca: "Regla de repetició", en: "Repeat rule", de: "Wiederholungsregel" },
+
+  /* Repetición de las tareas recurrentes */
+  "repeat.mode.label": { es: "Tipo de repetición", ca: "Tipus de repetició", en: "Repeat type", de: "Wiederholungsart" },
+  "repeat.mode.interval": { es: "Cada cierto tiempo", ca: "Cada cert temps", en: "Every so often", de: "In Abständen" },
+  "repeat.mode.weekdays": { es: "Días de la semana", ca: "Dies de la setmana", en: "Weekdays", de: "Wochentage" },
+  "repeat.every": { es: "Cada", ca: "Cada", en: "Every", de: "Alle" },
+  "repeat.unit.day.one": { es: "día", ca: "dia", en: "day", de: "Tag" },
+  "repeat.unit.day.other": { es: "días", ca: "dies", en: "days", de: "Tage" },
+  "repeat.unit.week.one": { es: "semana", ca: "setmana", en: "week", de: "Woche" },
+  "repeat.unit.week.other": { es: "semanas", ca: "setmanes", en: "weeks", de: "Wochen" },
+  "repeat.unit.month.one": { es: "mes", ca: "mes", en: "month", de: "Monat" },
+  "repeat.unit.month.other": { es: "meses", ca: "mesos", en: "months", de: "Monate" },
+  "repeat.unit.year.one": { es: "año", ca: "any", en: "year", de: "Jahr" },
+  "repeat.unit.year.other": { es: "años", ca: "anys", en: "years", de: "Jahre" },
+  "repeat.summary.day": { es: "Cada día", ca: "Cada dia", en: "Every day", de: "Jeden Tag" },
+  "repeat.summary.week": { es: "Cada semana", ca: "Cada setmana", en: "Every week", de: "Jede Woche" },
+  "repeat.summary.month": { es: "Cada mes", ca: "Cada mes", en: "Every month", de: "Jeden Monat" },
+  "repeat.summary.year": { es: "Cada año", ca: "Cada any", en: "Every year", de: "Jedes Jahr" },
+  "repeat.summary.many": {
+    es: "Cada {count} {unit}",
+    ca: "Cada {count} {unit}",
+    en: "Every {count} {unit}",
+    de: "Alle {count} {unit}",
+  },
+
+  /* Fechas en la lista */
+  "due.today": { es: "Hoy", ca: "Avui", en: "Today", de: "Heute" },
+  "due.tomorrow": { es: "Mañana", ca: "Demà", en: "Tomorrow", de: "Morgen" },
+  "due.overdue": { es: "Vencida · {date}", ca: "Vençuda · {date}", en: "Overdue · {date}", de: "Überfällig · {date}" },
+  "meta.planned": { es: "Plan: {date}", ca: "Pla: {date}", en: "Plan: {date}", de: "Plan: {date}" },
+
+  /* Ajustes: parámetros de las tareas */
+  "settings.params": {
+    es: "Parámetros de las tareas",
+    ca: "Paràmetres de les tasques",
+    en: "Task parameters",
+    de: "Aufgabenparameter",
+  },
+  "settings.params.hint": {
+    es: "Elige qué datos tiene una tarea. El título siempre está.",
+    ca: "Tria quines dades té una tasca. El títol sempre hi és.",
+    en: "Choose what data a task has. The title is always there.",
+    de: "Lege fest, welche Angaben eine Aufgabe hat. Der Titel ist immer dabei.",
+  },
+  "col.once": { es: "Única", ca: "Única", en: "Once", de: "Einmal" },
+  "col.recurring": { es: "Recurr.", ca: "Recurr.", en: "Repeat", de: "Wiederh." },
+  "col.required": { es: "Oblig.", ca: "Oblig.", en: "Req.", de: "Pflicht" },
+  "param.required": { es: "Obligatorio", ca: "Obligatori", en: "Required", de: "Pflichtfeld" },
+  "param.add": { es: "Añadir parámetro", ca: "Afegeix un paràmetre", en: "Add parameter", de: "Parameter hinzufügen" },
+  "param.name": { es: "Nombre del parámetro", ca: "Nom del paràmetre", en: "Parameter name", de: "Parametername" },
+  "param.type": { es: "Tipo", ca: "Tipus", en: "Type", de: "Typ" },
+  "param.options": {
+    es: "Opciones separadas por comas",
+    ca: "Opcions separades per comes",
+    en: "Options separated by commas",
+    de: "Optionen, durch Kommas getrennt",
+  },
+  "param.create": { es: "Añadir", ca: "Afegeix", en: "Add", de: "Hinzufügen" },
+  "param.cancel": { es: "Cancelar", ca: "Cancel·la", en: "Cancel", de: "Abbrechen" },
+  "param.remove": { es: "Eliminar parámetro", ca: "Elimina el paràmetre", en: "Remove parameter", de: "Parameter entfernen" },
+  "param.error": {
+    es: "Escribe un nombre. Si es una lista, añade al menos una opción.",
+    ca: "Escriu un nom. Si és una llista, afegeix almenys una opció.",
+    en: "Enter a name. For a list, add at least one option.",
+    de: "Gib einen Namen ein. Bei einer Liste mindestens eine Option.",
+  },
+
+  /* Ajustes: listas */
+  "settings.lists": { es: "Listas", ca: "Llistes", en: "Lists", de: "Listen" },
+  "list.show": { es: "Mostrar en inicio", ca: "Mostra a l'inici", en: "Show on home", de: "Auf dem Start zeigen" },
+  "list.hide": { es: "Ocultar en inicio", ca: "Amaga a l'inici", en: "Hide on home", de: "Auf dem Start ausblenden" },
+  "list.edit": { es: "Editar lista", ca: "Edita la llista", en: "Edit list", de: "Liste bearbeiten" },
+  "list.hidden": { es: "Oculta", ca: "Amagada", en: "Hidden", de: "Ausgeblendet" },
+
+  /* Ventana de una lista */
+  "list.dialog.title": { es: "Lista", ca: "Llista", en: "List", de: "Liste" },
+  "list.name": { es: "Nombre", ca: "Nom", en: "Name", de: "Name" },
+  "list.sort": { es: "Orden de las tareas", ca: "Ordre de les tasques", en: "Task order", de: "Reihenfolge der Aufgaben" },
+  "list.sort.hint": {
+    es: "Se ordena por el primer criterio y, si empatan, por el siguiente.",
+    ca: "S'ordena pel primer criteri i, si empaten, pel següent.",
+    en: "Sorted by the first criterion, then by the next one when tied.",
+    de: "Zuerst nach dem ersten Kriterium, bei Gleichstand nach dem nächsten.",
+  },
+  "sort.add": { es: "Añadir criterio", ca: "Afegeix un criteri", en: "Add criterion", de: "Kriterium hinzufügen" },
+  "sort.remove": { es: "Quitar criterio", ca: "Treu el criteri", en: "Remove criterion", de: "Kriterium entfernen" },
+  "sort.up": { es: "Subir prioridad", ca: "Puja la prioritat", en: "Raise priority", de: "Priorität erhöhen" },
+  "sort.created": { es: "Fecha de creación", ca: "Data de creació", en: "Creation date", de: "Erstellungsdatum" },
+  "dir.date.asc": { es: "Primero las más próximas", ca: "Primer les més properes", en: "Soonest first", de: "Früheste zuerst" },
+  "dir.date.desc": { es: "Primero las más lejanas", ca: "Primer les més llunyanes", en: "Latest first", de: "Späteste zuerst" },
+  "dir.level.asc": { es: "De menos a más", ca: "De menys a més", en: "Low to high", de: "Niedrig zuerst" },
+  "dir.level.desc": { es: "De más a menos", ca: "De més a menys", en: "High to low", de: "Hoch zuerst" },
+  "dir.text.asc": { es: "A → Z", ca: "A → Z", en: "A → Z", de: "A → Z" },
+  "dir.text.desc": { es: "Z → A", ca: "Z → A", en: "Z → A", de: "Z → A" },
+  "dir.number.asc": { es: "De menor a mayor", ca: "De menor a major", en: "Smallest first", de: "Kleinste zuerst" },
+  "dir.number.desc": { es: "De mayor a menor", ca: "De major a menor", en: "Largest first", de: "Größte zuerst" },
+  "dir.created.asc": { es: "Más antiguas primero", ca: "Primer les més antigues", en: "Oldest first", de: "Älteste zuerst" },
+  "dir.created.desc": { es: "Más recientes primero", ca: "Primer les més recents", en: "Newest first", de: "Neueste zuerst" },
+  "list.delete": { es: "Eliminar lista", ca: "Elimina la llista", en: "Delete list", de: "Liste löschen" },
+  "list.delete.confirm": {
+    es: "Pulsa otra vez para eliminar la lista y sus tareas",
+    ca: "Prem una altra vegada per eliminar la llista i les seves tasques",
+    en: "Press again to delete the list and its tasks",
+    de: "Noch einmal drücken, um die Liste und ihre Aufgaben zu löschen",
   },
 };
 

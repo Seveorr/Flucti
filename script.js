@@ -94,19 +94,36 @@
   const activeWeather = () => (testState && testState.weather) || weatherCache[placeKey(activePlace())] || null;
   const currentDate = () => new Date(Date.now() + (testState ? testState.offset : 0));
 
+  // Si el servicio del tiempo falla, se reintenta a los 60 s y luego con esperas mayores (hasta 15 min).
+  const weatherRetry = {}; // por ubicación: { timer, delay }
+
+  function retryWeatherLater(p) {
+    const state = (weatherRetry[placeKey(p)] = weatherRetry[placeKey(p)] || { timer: 0, delay: 60 * 1000 });
+    if (state.timer) return;
+    state.timer = setTimeout(() => {
+      state.timer = 0;
+      fetchWeather(p);
+    }, state.delay);
+    state.delay = Math.min(state.delay * 2, 15 * 60 * 1000);
+  }
+
   async function fetchWeather(p) {
     try {
       const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${p.lat}&longitude=${p.lon}&current=weather_code`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        retryWeatherLater(p);
+        return;
+      }
       const code = (await res.json()).current?.weather_code;
       if (typeof code !== "number") return;
+      delete weatherRetry[placeKey(p)];
       weatherCache[placeKey(p)] = weatherFromCode(code);
       if (placeKey(p) === placeKey(activePlace())) {
         skyDirty = true;
         updateClock();
       }
     } catch {
-      /* Sin conexión: se mantiene el último tiempo conocido. */
+      retryWeatherLater(p); // sin conexión: se mantiene el último tiempo conocido
     }
   }
 
@@ -667,85 +684,10 @@
   })();
 
   /* ------------------------------------------------------------------------
-     Idioma y menú
-     Los textos viven en languages.js (LANGUAGES y TRANSLATIONS). Los elementos del
-     HTML usan data-i18n, data-i18n-aria-label y data-i18n-placeholder.
+     Idioma (la lógica está en i18n.js y los textos en languages.js)
      ------------------------------------------------------------------------ */
-  const LANGUAGE_KEY = "language:v1";
-  const languageButtons = document.querySelectorAll("[data-language-toggle]");
-  const menuBtn = document.getElementById("menu-btn");
-  const menuDialog = document.getElementById("menu-dialog");
-  const menuClose = document.getElementById("menu-close");
-
-  function detectLanguage() {
-    try {
-      const saved = localStorage.getItem(LANGUAGE_KEY);
-      if (LANGUAGES.some((l) => l.code === saved)) return saved;
-    } catch {
-      /* se ignora */
-    }
-    const browser = (navigator.language || "").slice(0, 2).toLowerCase();
-    return LANGUAGES.some((l) => l.code === browser) ? browser : LANGUAGES[0].code;
-  }
-
-  let language = detectLanguage();
-  const currentLanguage = () => LANGUAGES.find((l) => l.code === language) || LANGUAGES[0];
-
-  // Devuelve el texto de una clave en el idioma actual (o en el primero de la lista si falta).
-  function t(key, params) {
-    const entry = TRANSLATIONS[key];
-    let text = (entry && (entry[language] || entry[LANGUAGES[0].code])) || key;
-    if (params) for (const [name, value] of Object.entries(params)) text = text.replaceAll(`{${name}}`, value);
-    return text;
-  }
-
-  function applyStaticTranslations() {
-    const current = currentLanguage();
-    document.documentElement.lang = current.code;
-    document.title = t("app.title");
-
-    document.querySelectorAll("[data-i18n]").forEach((el) => (el.textContent = t(el.dataset.i18n)));
-    document.querySelectorAll("[data-i18n-aria-label]").forEach((el) => el.setAttribute("aria-label", t(el.dataset.i18nAriaLabel)));
-    document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => el.setAttribute("placeholder", t(el.dataset.i18nPlaceholder)));
-
-    document.querySelectorAll(".language-code").forEach((el) => (el.textContent = current.label));
-    languageButtons.forEach((button) => button.setAttribute("aria-label", t("language.change", { language: current.name })));
-
-    document.querySelectorAll(".task").forEach((item) => {
-      const name = item.querySelector(".task-name").textContent;
-      item.querySelector(".check").setAttribute("aria-label", t("task.complete", { name }));
-    });
-  }
-
-  function setLanguage(code) {
-    language = code;
-    try {
-      localStorage.setItem(LANGUAGE_KEY, code);
-    } catch {
-      /* Sin almacenamiento disponible */
-    }
-    applyStaticTranslations();
-    updateClock(); // actualiza saludo y fecha al instante
-    renderLoginForm(); // los textos de la pantalla de acceso cambian de idioma
-  }
-
-  languageButtons.forEach((button) =>
-    button.addEventListener("click", () => {
-      const next = (LANGUAGES.indexOf(currentLanguage()) + 1) % LANGUAGES.length;
-      setLanguage(LANGUAGES[next].code);
-    })
-  );
-
-  // Ventana del menú: el <dialog> se muestra delante de todo y se cierra con Esc.
-  menuBtn.addEventListener("click", () => {
-    document.documentElement.classList.add("modal-open");
-    menuDialog.showModal();
-  });
-  menuClose.addEventListener("click", () => menuDialog.close());
-  menuDialog.addEventListener("click", (event) => {
-    if (event.target === menuDialog) menuDialog.close(); // clic fuera del contenido
-  });
-  menuDialog.addEventListener("close", () => document.documentElement.classList.remove("modal-open"));
+  const { t } = I18n;
+  const currentLanguage = () => I18n.current();
 
   /* ------------------------------------------------------------------------
      Reloj, saludo y fecha
@@ -799,440 +741,15 @@
   }
 
   /* ------------------------------------------------------------------------
-     Tareas
-     ------------------------------------------------------------------------ */
-  const STORAGE_KEY = "tasks:v1"; // formato antiguo (lista simple), solo se lee para migrar
-  const LEGACY_STORAGE_KEY = "tareas:v1"; // nombre aún más antiguo
-  const DATA_KEY = "tasks:v2"; // formato actual: datos completos de cada cuenta
-  const STRIKE_DELAY = 380;
-  const LEAVE_DURATION = 320;
-
-  const form = document.getElementById("add-form");
-  const input = document.getElementById("task-input");
-  const list = document.getElementById("task-list");
-  const emptyEl = document.getElementById("empty");
-
-  let session = Auth.getSession(); // cuenta con la sesión iniciada en este dispositivo (o null)
-
-  // Datos de cada cuenta en este dispositivo: { tasks, pending, version }
-  //  - tasks:   tareas pendientes { id, name, createdAt }
-  //  - pending: cambios que aún no se han enviado al servidor
-  //             ({ id, name, createdAt, deleted: false } o { id, deleted: true })
-  //  - version: hasta qué cambio del servidor estamos al día
-  const dataKey = () => `${DATA_KEY}:${session.sub}`;
-
-  const newId = () =>
-    window.crypto && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-  function parseTasks(raw) {
-    try {
-      const data = JSON.parse(raw || "[]");
-      return Array.isArray(data) ? data : [];
-    } catch {
-      return [];
-    }
-  }
-
-  // Deja solo tareas válidas, con fecha de creación, de la más nueva a la más antigua.
-  function normalizeTasks(items) {
-    const base = Date.now();
-    return items
-      .filter((task) => task && typeof task.id === "string" && typeof task.name === "string")
-      .map((task, i) => ({
-        id: task.id,
-        name: task.name,
-        createdAt: Number.isFinite(task.createdAt) ? task.createdAt : base - i,
-      }))
-      .sort((a, b) => b.createdAt - a.createdAt);
-  }
-
-  const isValidChange = (change) => change && typeof change.id === "string" && typeof change.deleted === "boolean";
-
-  function readAccountData() {
-    const empty = { tasks: [], pending: [], version: 0 };
-    if (!session) return empty;
-    try {
-      const own = localStorage.getItem(dataKey());
-      if (own !== null) {
-        const data = JSON.parse(own);
-        return {
-          tasks: normalizeTasks(Array.isArray(data.tasks) ? data.tasks : []),
-          pending: Array.isArray(data.pending) ? data.pending.filter(isValidChange) : [],
-          version: Number.isInteger(data.version) ? data.version : 0,
-        };
-      }
-
-      // Migración desde la lista simple anterior: pasa a esta cuenta y se subirá al servidor.
-      // La lista global de antes del login solo la recoge la primera cuenta real que entra.
-      const ownOld = `${STORAGE_KEY}:${session.sub}`;
-      let old = localStorage.getItem(ownOld);
-      if (old !== null) {
-        localStorage.removeItem(ownOld);
-      } else if (session.provider !== "dev") {
-        old = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
-        localStorage.removeItem(STORAGE_KEY);
-        localStorage.removeItem(LEGACY_STORAGE_KEY);
-      }
-      if (old) {
-        const migrated = normalizeTasks(parseTasks(old));
-        return { tasks: migrated, pending: migrated.map((task) => ({ ...task, deleted: false })), version: 0 };
-      }
-    } catch {
-      /* Sin almacenamiento disponible */
-    }
-    return empty;
-  }
-
-  let tasks = [];
-  let syncState = { version: 0, pending: [] };
-
-  function saveTasks() {
-    if (!session) return;
-    try {
-      localStorage.setItem(dataKey(), JSON.stringify({ tasks, pending: syncState.pending, version: syncState.version }));
-    } catch {
-      /* Sin almacenamiento disponible */
-    }
-  }
-
-  function loadAccount() {
-    const data = readAccountData();
-    tasks = data.tasks;
-    syncState = { version: data.version, pending: data.pending };
-    saveTasks(); // deja guardada la migración, si la hubo
-  }
-
-  loadAccount();
-
-  function updateEmpty() {
-    emptyEl.hidden = tasks.length > 0;
-  }
-
-  function renderTasks() {
-    list.replaceChildren(...tasks.map((task) => createTaskElement(task, false)));
-    updateEmpty();
-  }
-
-  function createTaskElement(task, animate) {
-    const item = document.createElement("li");
-    item.className = "task" + (animate ? " entering" : "");
-    item.dataset.id = task.id;
-
-    const row = document.createElement("div");
-    row.className = "task-row";
-
-    const content = document.createElement("div");
-    content.className = "task-content";
-
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.className = "check";
-    checkbox.setAttribute("aria-label", t("task.complete", { name: task.name }));
-
-    const name = document.createElement("span");
-    name.className = "task-name";
-    name.textContent = task.name;
-
-    content.append(checkbox, name);
-    row.append(content);
-    item.append(row);
-    return item;
-  }
-
-  function completeTask(item) {
-    if (item.classList.contains("done")) return;
-    item.classList.add("done");
-
-    const id = item.dataset.id;
-    tasks = tasks.filter((task) => task.id !== id);
-    syncState.pending = syncState.pending.filter((change) => change.id !== id).concat({ id, deleted: true });
-    saveTasks();
-    scheduleSync();
-
-    setTimeout(() => {
-      item.classList.add("leaving");
-      setTimeout(() => {
-        item.remove();
-        updateEmpty();
-      }, LEAVE_DURATION);
-    }, STRIKE_DELAY);
-  }
-
-  list.addEventListener("change", (event) => {
-    const checkbox = event.target;
-    if (!checkbox.classList.contains("check") || !checkbox.checked) return;
-    completeTask(checkbox.closest(".task"));
-  });
-
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-
-    const name = input.value.trim().replace(/\s+/g, " ");
-    if (!name) {
-      input.focus();
-      return;
-    }
-
-    const task = { id: newId(), name, createdAt: Date.now() };
-    tasks.unshift(task);
-    syncState.pending.push({ ...task, deleted: false });
-    saveTasks();
-    scheduleSync();
-
-    list.prepend(createTaskElement(task, true));
-    input.value = "";
-    input.focus();
-    updateEmpty();
-  });
-
-  /* ------------------------------------------------------------------------
-     Inicio de sesión y cuentas (el servidor está en api.php y el cliente en auth.js)
-     Sin sesión se muestra la pantalla de login y el resto de la app queda bloqueado.
-     ------------------------------------------------------------------------ */
-  const loginEl = document.getElementById("login");
-  const loginAccountEl = document.getElementById("login-account");
-  const loginTextEl = document.getElementById("login-text");
-  const loginForm = document.getElementById("login-form");
-  const loginEmail = document.getElementById("login-email");
-  const loginPassword = document.getElementById("login-password");
-  const loginConfirm = document.getElementById("login-confirm");
-  const loginConfirmLabel = document.getElementById("login-confirm-label");
-  const loginSubmit = document.getElementById("login-submit");
-  const loginModeBtn = document.getElementById("login-mode-btn");
-  const loginDevEl = document.getElementById("login-dev");
-  const loginNoticeEl = document.getElementById("login-notice");
-  const loginDevBtn = document.getElementById("login-dev-btn");
-  const loginErrorEl = document.getElementById("login-error");
-  const loginBackBtn = document.getElementById("login-back");
-  const switchAccountBtn = document.getElementById("switch-account-btn");
-  const signOutBtn = document.getElementById("sign-out-btn");
-  const appEl = document.querySelector("main");
-
-  // Con el menú abierto o sin sesión, los gestos de scroll de la página se ignoran.
-  const isLocked = () => !session || menuDialog.open;
-
-  let loginMode = "signin"; // "signin" (entrar) o "register" (crear cuenta)
-  let loginBusy = false;
-
-  // Muestra el formulario (o el aviso de desarrollo) con los textos del modo y del idioma actuales.
-  function renderLoginForm() {
-    if (loginEl.hidden) return;
-    const serverReady = Auth.canUseServer();
-    loginAccountEl.hidden = !serverReady;
-    loginDevEl.hidden = serverReady;
-    if (!serverReady) {
-      loginTextEl.textContent = t("login.text");
-      loginNoticeEl.textContent = t(window.location.protocol === "file:" ? "login.fileProtocol" : "login.noServer");
-      return;
-    }
-    const registering = loginMode === "register";
-    loginTextEl.textContent = t(registering ? "login.textRegister" : "login.text");
-    loginSubmit.textContent = t(registering ? "login.register" : "login.signIn");
-    loginModeBtn.textContent = t(registering ? "login.toSignIn" : "login.toRegister");
-    loginConfirm.hidden = !registering;
-    loginConfirmLabel.hidden = !registering;
-    loginPassword.setAttribute("autocomplete", registering ? "new-password" : "current-password");
-  }
-
-  function resetLoginForm() {
-    loginMode = "signin";
-    loginBusy = false;
-    loginSubmit.disabled = false;
-    loginForm.reset();
-  }
-
-  function showLogin({ allowBack = false } = {}) {
-    loginEl.hidden = false;
-    loginBackBtn.hidden = !allowBack; // al cambiar de cuenta se puede volver a la actual
-    loginErrorEl.textContent = "";
-    resetLoginForm();
-    appEl.inert = true;
-    appEl.setAttribute("aria-hidden", "true");
-    document.documentElement.classList.add("login-open");
-    renderLoginForm();
-  }
-
-  function hideLogin() {
-    loginEl.hidden = true;
-    appEl.inert = false;
-    appEl.removeAttribute("aria-hidden");
-    document.documentElement.classList.remove("login-open");
-  }
-
-  function startSession(newSession) {
-    session = newSession;
-    loadAccount();
-    renderTasks();
-    hideLogin();
-    window.scrollTo({ top: 0, behavior: "auto" });
-    updateOpen();
-    scheduleSync(0); // trae las tareas de los demás dispositivos
-  }
-
-  // Cierra la sesión de este dispositivo y vuelve al login (con un mensaje opcional).
-  // Los cambios que no se hubieran enviado quedan guardados y se envían al volver a entrar.
-  function endSession(messageKey) {
-    clearTimeout(syncTimer);
-    Auth.signOut(session);
-    session = null;
-    tasks = [];
-    syncState = { version: 0, pending: [] };
-    renderTasks(); // no deja las tareas de la cuenta en pantalla
-    window.scrollTo({ top: 0, behavior: "auto" });
-    showLogin();
-    if (messageKey) loginErrorEl.textContent = t(messageKey);
-  }
-
-  loginModeBtn.addEventListener("click", () => {
-    loginMode = loginMode === "register" ? "signin" : "register";
-    loginErrorEl.textContent = "";
-    renderLoginForm();
-  });
-
-  loginForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    if (loginBusy) return;
-
-    const email = loginEmail.value.trim();
-    const password = loginPassword.value;
-    const registering = loginMode === "register";
-
-    // Comprobaciones rápidas en el navegador (el servidor lo vuelve a comprobar todo).
-    let errorKey = null;
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errorKey = "login.error.invalidEmail";
-    else if (!password) errorKey = registering ? "login.error.weakPassword" : "login.error.credentials";
-    else if (registering && password.length < 8) errorKey = "login.error.weakPassword";
-    else if (registering && new TextEncoder().encode(password).length > 72) errorKey = "login.error.passwordTooLong";
-    else if (registering && password !== loginConfirm.value) errorKey = "login.error.mismatch";
-    if (errorKey) {
-      loginErrorEl.textContent = t(errorKey);
-      return;
-    }
-
-    loginBusy = true;
-    loginSubmit.disabled = true;
-    loginErrorEl.textContent = "";
-    const result = registering ? await Auth.register(email, password) : await Auth.signIn(email, password);
-    loginBusy = false;
-    loginSubmit.disabled = false;
-
-    if (result.error) {
-      loginErrorEl.textContent = t(`login.error.${result.error}`);
-      return;
-    }
-    loginForm.reset(); // no deja la contraseña escrita en el formulario
-    startSession(result.session);
-  });
-
-  loginDevBtn.addEventListener("click", () => startSession(Auth.startDevSession()));
-  loginBackBtn.addEventListener("click", hideLogin);
-
-  switchAccountBtn.addEventListener("click", () => {
-    menuDialog.close();
-    showLogin({ allowBack: true });
-  });
-
-  signOutBtn.addEventListener("click", () => {
-    menuDialog.close();
-    endSession();
-  });
-
-  /* ------------------------------------------------------------------------
-     Sincronización de tareas con el servidor (api.php)
-     Los cambios se guardan primero en el dispositivo (así funciona sin conexión) y se envían
-     en cuanto se puede. Cada sincronización manda los cambios pendientes y recibe lo que han
-     hecho los demás dispositivos de la misma cuenta.
-     ------------------------------------------------------------------------ */
-  const SYNC_DEBOUNCE = 600; // espera tras un cambio, por si hay varios seguidos
-  const SYNC_INTERVAL = 30 * 1000; // consulta periódica mientras la app está a la vista
-
-  let syncTimer = 0;
-  let syncing = false;
-  let syncAgain = false;
-
-  const canSync = () => Auth.syncEnabled(session);
-
-  function scheduleSync(delay = SYNC_DEBOUNCE) {
-    if (!canSync()) return;
-    clearTimeout(syncTimer);
-    syncTimer = setTimeout(syncNow, delay);
-  }
-
-  // Aplica los cambios que vienen del servidor. Devuelve true si cambió la lista.
-  function applyServerChanges(changes) {
-    // Lo que acabo de completar aquí y aún no se ha enviado no debe reaparecer.
-    const pendingDeletes = new Set(syncState.pending.filter((change) => change.deleted).map((change) => change.id));
-    let changed = false;
-
-    for (const change of changes) {
-      if (!change || typeof change.id !== "string") continue;
-      const index = tasks.findIndex((task) => task.id === change.id);
-      if (change.deleted) {
-        if (index !== -1) {
-          tasks.splice(index, 1);
-          changed = true;
-        }
-      } else if (index === -1 && !pendingDeletes.has(change.id) && typeof change.name === "string") {
-        tasks.push({ id: change.id, name: change.name, createdAt: Number(change.createdAt) || Date.now() });
-        changed = true;
-      }
-    }
-    if (changed) tasks.sort((a, b) => b.createdAt - a.createdAt);
-    return changed;
-  }
-
-  async function syncNow() {
-    if (!canSync() || navigator.onLine === false) return;
-    if (syncing) {
-      syncAgain = true; // se repite al terminar la sincronización en curso
-      return;
-    }
-
-    syncing = true;
-    const account = session; // la cuenta que inició esta sincronización
-    const batch = syncState.pending.slice();
-    try {
-      const { status, data } = await Auth.api("sync", { since: syncState.version, changes: batch });
-      if (session !== account) return; // mientras tanto se cambió de cuenta
-      if (status === 401) {
-        endSession("login.expired"); // la sesión del servidor caducó: hay que volver a entrar
-        return;
-      }
-      if (status !== 200 || !data || !Array.isArray(data.changes)) return; // se reintenta más tarde
-
-      syncState.pending = syncState.pending.filter((change) => !batch.includes(change));
-      syncState.version = Number.isInteger(data.version) ? data.version : syncState.version;
-      const changed = applyServerChanges(data.changes);
-      saveTasks();
-      if (changed) renderTasks();
-    } catch {
-      /* Sin conexión: los cambios siguen guardados y se enviarán más tarde. */
-    } finally {
-      syncing = false;
-      if (syncAgain) {
-        syncAgain = false;
-        scheduleSync(300);
-      }
-    }
-  }
-
-  setInterval(() => {
-    if (!document.hidden) scheduleSync(0);
-  }, SYNC_INTERVAL);
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) scheduleSync(0);
-  });
-  window.addEventListener("online", () => scheduleSync(0));
-
-  /* ------------------------------------------------------------------------
      Navegación entre los dos estados: inicio (home) y tareas (tasks)
      ------------------------------------------------------------------------ */
   const tasksSection = document.getElementById("tasks");
   const scrollHint = document.querySelector(".scroll-hint");
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   const MOVE_DURATION = 800;
+
+  // Con una ventana abierta (ajustes, tarea, lista) los gestos de desplazamiento de la página se ignoran.
+  const isLocked = () => Flucti.isDialogOpen();
 
   let locked = false;
   let lockTimer;
@@ -1252,6 +769,7 @@
   }
 
   const goDown = () => goTo(tasksTop());
+  Flucti.goToTasks = goDown; // tasks.js lo usa al elegir una lista
   const goUp = () => goTo(0);
 
   let lastWheelTime = 0;
@@ -1360,14 +878,20 @@
   /* ------------------------------------------------------------------------
      Inicio
      ------------------------------------------------------------------------ */
-  renderTasks();
-  applyStaticTranslations();
+  Flucti.now = currentDate; // las fechas de las tareas siguen la hora de testSky
+  I18n.init();
+  I18n.onChange(() => updateClock()); // saludo y fecha al cambiar de idioma
   tick();
-  if (!session) showLogin();
-  else scheduleSync(0);
   requestPlace();
   fetchWeather(place);
   setInterval(() => fetchWeather(activePlace()), 15 * 60 * 1000);
+
+  // Restos de versiones anteriores (sesión de las cuentas): ya no se usan.
+  try {
+    localStorage.removeItem("session:v1");
+  } catch {
+    /* se ignora */
+  }
 
   // Las transiciones de color se activan tras el primer pintado para evitar un parpadeo inicial.
   requestAnimationFrame(() => requestAnimationFrame(() => document.body.classList.add("ready")));

@@ -1,44 +1,41 @@
 # Flucti
 
-Gestor de tareas minimalista, limpio y ordenado. La pantalla de inicio muestra la hora con segundos, un saludo y la fecha, y el fondo cambia con el cielo real del lugar donde estás: la hora, la época del año y el tiempo atmosférico. Al deslizar hacia abajo aparece la lista de tareas.
+Gestor de tareas minimalista, limpio y ordenado. La pantalla de inicio muestra la hora con segundos, un saludo, la fecha y tus listas, y el fondo cambia con el cielo real del lugar donde estás: la hora, la época del año y el tiempo atmosférico. Al deslizar hacia abajo aparece la lista de tareas.
+
+Funciona **solo en tu navegador**: no hay servidor ni cuentas, y las tareas se guardan en este dispositivo.
 
 ## Qué hace
 
 - **Cielo dinámico.** El color de fondo sigue la posición real del sol (hora azul, hora dorada, día y noche) según tu ubicación, y cambia con el tiempo: sol, nubes, lluvia, nieve, tormenta con rayos y niebla.
-- **Tareas.** Añade tareas y complétalas con un clic. Se guardan en el dispositivo y se sincronizan entre dispositivos con la misma cuenta.
-- **Cuentas con correo y contraseña.** Las contraseñas se guardan solo como hash. Hay límite de intentos y sesión de 30 días.
+- **Listas.** Se crean y se eligen en la pantalla de inicio. Por defecto hay una llamada "Actual". Se pueden ocultar, renombrar y eliminar, y cada una tiene su propio orden.
+- **Tareas.** Escribe el título y pulsa **+** para guardarla, o abre sus **parámetros** (botón de al lado) para completar más datos.
+  - *Únicas*: descripción, fecha de vencimiento (hora opcional), fecha de planificación (opcional) y energía (alta, media o baja).
+  - *Recurrentes*: lo mismo, más cada cuánto se repite (cada N días, semanas, meses o años) o en qué días de la semana. Al completarlas pasan a su siguiente fecha.
+  - Las que vencen **mañana** se resaltan.
+- **Orden por lista.** Por defecto: primero las que vencen antes y, a igual fecha, las que más energía suponen. Se puede cambiar en las opciones de cada lista.
+- **Parámetros configurables.** En Ajustes se elige qué parámetros lleva cada tipo de tarea, cuáles son obligatorios y se pueden añadir los propios (texto, texto largo, número, fecha, lista desplegable o sí/no). El título siempre está.
 - **Cuatro idiomas:** español, catalán, inglés y alemán. Todos los textos están en `languages.js` y se pueden editar a mano.
 
 ## Archivos
 
 | Archivo | Qué es |
 |---|---|
-| `index.html` | Estructura de la página |
+| `index.html` | Estructura de la página y ventanas |
 | `style.css` | Estilos y paletas del cielo |
-| `script.js` | Lógica: reloj, cielo, clima, tareas, sesión y sincronización |
-| `languages.js` | Idiomas y traducciones |
-| `auth.js` | Cuentas en el navegador (conexión con `api.php`) |
-| `api.php` | Servidor: cuentas, sesiones y sincronización (SQLite) |
+| `script.js` | Reloj, cielo, tiempo atmosférico y desplazamiento entre pantallas |
+| `tasks.js` | Tareas, listas, parámetros, orden y recurrencias |
+| `i18n.js` | Lógica de idiomas y utilidades comunes |
+| `languages.js` | Idiomas y traducciones (el único archivo que hay que tocar para cambiar textos) |
 
-## Probarlo en local
+## Usarlo
 
-Hace falta **PHP 8.1 o superior** con la extensión `pdo_sqlite` (se comprueba con `php -m`).
+No necesita instalar nada: basta con servir la carpeta con cualquier servidor estático (por ejemplo la extensión Live Server de VS Code, o `python3 -m http.server`) y abrir `index.html`. También funciona en **GitHub Pages**.
 
-```bash
-php -S localhost:8000
-```
+Si abres `index.html` directamente como archivo, el navegador puede bloquear la ubicación; en ese caso la app usa Igualada como lugar por defecto.
 
-Abre `http://localhost:8000`. Hay que usar el servidor de PHP: **Live Server de VS Code no sirve**, porque no ejecuta PHP.
+## Tus datos
 
-Sin PHP también se puede ver la interfaz poniendo `const API_URL = ""` en `auth.js`: entonces no hay cuentas ni sincronización, y se ofrece un modo de desarrollo con las tareas guardadas solo en el navegador.
-
-## Poner la app en un servidor
-
-1. Sube todos los archivos a un servidor con PHP 8.1+ y HTTPS.
-2. Mueve la carpeta de datos **fuera de la web**: cambia `DATA_DIR` al principio de `api.php` (por ejemplo, `/var/lib/flucti`). Ahí se guardan las cuentas y las sesiones. Con Apache se protege sola con un `.htaccess`, pero en otros servidores no.
-3. Si el servidor está detrás de un proxy inverso, configúralo para que PHP vea la IP real del usuario (el límite de intentos se hace por IP).
-
-GitHub Pages no sirve para esto, porque solo aloja páginas estáticas y no ejecuta PHP.
+Todo se guarda en `localStorage`, en este navegador y dispositivo. Si borras los datos del sitio, se pierden las tareas, y no se sincronizan entre dispositivos.
 
 ## Probar el cielo desde la consola
 
@@ -48,14 +45,7 @@ testSky("help")   // muestra todas las opciones
 testSky()         // vuelve al estado real
 ```
 
-Durante 60 segundos (o los que indiques en `duration`) la página hace caso a lo que pidas.
-
-## Seguridad
-
-- Las contraseñas nunca se guardan en claro (`password_hash`) ni en el navegador.
-- Todas las peticiones al servidor deben venir de su propia web (comprobación de origen) y ser JSON.
-- Límite de intentos fallidos por correo y por IP, y de cuentas nuevas por IP.
-- Si encuentras un problema de seguridad, avisa de forma privada (con una *Security advisory* de GitHub) antes de publicarlo.
+Durante 60 segundos (o los que indiques en `duration`) la página hace caso a lo que pidas. Las fechas de las tareas (por ejemplo, qué vence "mañana") siguen también esa hora de prueba.
 
 ## Créditos
 

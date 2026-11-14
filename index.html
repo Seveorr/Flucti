@@ -22,6 +22,9 @@
           <span id="time-hm">--:--</span><span class="time-s" id="time-s">:--</span>
         </time>
         <p class="date" id="date"></p>
+
+        <!-- Listas de tareas: elegir una, o crear otra con + -->
+        <nav class="lists" id="home-lists" aria-label="Listas" data-i18n-aria-label="lists.label"></nav>
       </div>
 
       <a class="scroll-hint" href="#tasks" aria-label="Ver tareas" data-i18n-aria-label="scroll.label">
@@ -37,7 +40,7 @@
       <!-- Botones de la franja superior, a la altura de la flecha -->
       <div class="topbar">
         <button class="icon-btn" id="menu-btn" type="button" aria-haspopup="dialog"
-                aria-label="Abrir menú" data-i18n-aria-label="menu.open">
+                aria-label="Abrir ajustes" data-i18n-aria-label="menu.open">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
             <path d="M4 7h16M4 12h16M4 17h16"/>
@@ -49,86 +52,93 @@
       </div>
 
       <div class="tasks-inner">
-        <h2 class="tasks-title" id="tasks-title" data-i18n="tasks.title">Tareas</h2>
+        <div class="tasks-head">
+          <h2 class="tasks-title" id="tasks-title"></h2>
+          <button class="icon-btn" id="list-options-btn" type="button" aria-haspopup="dialog"
+                  aria-label="Opciones de la lista" data-i18n-aria-label="list.options">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+              <circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>
+            </svg>
+          </button>
+        </div>
 
+        <!-- Título + guardar + parámetros (los dos botones son cuadrados y del mismo tamaño) -->
         <form class="add" id="add-form" autocomplete="off">
           <label class="visually-hidden" for="task-input" data-i18n="task.input.label">Nombre de la tarea</label>
           <input class="add-input" id="task-input" type="text" maxlength="120"
                  placeholder="Nombre de la tarea" data-i18n-placeholder="task.input.placeholder">
-          <button class="add-btn" type="submit" data-i18n="task.add">Añadir</button>
+          <button class="square-btn primary" type="submit" aria-label="Guardar tarea" data-i18n-aria-label="task.save">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+              <path d="M12 5v14M5 12h14"/>
+            </svg>
+          </button>
+          <button class="square-btn" id="params-btn" type="button" aria-haspopup="dialog"
+                  aria-label="Parámetros de la tarea" data-i18n-aria-label="task.params">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+              <path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>
+            </svg>
+          </button>
         </form>
 
         <ul class="list" id="task-list"></ul>
 
-        <p class="empty" id="empty" hidden data-i18n="task.empty">No tienes tareas pendientes. Escribe una arriba y pulsa Añadir.</p>
+        <p class="empty" id="empty" hidden data-i18n="task.empty">No hay tareas pendientes en esta lista. Escribe una arriba y pulsa +.</p>
       </div>
     </section>
 
   </main>
 
-  <!-- Ventana del menú (se muestra delante de todo) -->
-  <dialog class="modal" id="menu-dialog" aria-label="Menú" data-i18n-aria-label="menu.title">
+  <!-- Ajustes de la aplicación -->
+  <dialog class="modal modal-wide" id="settings-dialog" aria-labelledby="settings-title">
     <div class="modal-body">
-      <button class="icon-btn modal-close" id="menu-close" type="button"
-              aria-label="Cerrar" data-i18n-aria-label="menu.close">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-          <path d="M6 6l12 12M18 6L6 18"/>
-        </svg>
-      </button>
-
-      <!-- Opciones de cuenta, abajo del todo -->
-      <div class="menu-actions">
-        <button class="menu-item" id="switch-account-btn" type="button" data-i18n="menu.switchAccount">Cambiar de cuenta</button>
-        <button class="menu-item" id="sign-out-btn" type="button" data-i18n="menu.signOut">Cerrar sesión</button>
-      </div>
+      <header class="modal-head">
+        <h2 class="modal-title" id="settings-title" data-i18n="menu.title">Ajustes</h2>
+        <button class="icon-btn" id="settings-close" type="button" aria-label="Cerrar" data-i18n-aria-label="dialog.close">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </header>
+      <div id="settings-body"></div>
     </div>
   </dialog>
 
-  <!-- Inicio de sesión: ocupa toda la pantalla hasta que se entra con una cuenta -->
-  <section class="login" id="login" hidden aria-labelledby="login-title">
-    <div class="login-card">
-      <h1 class="login-title" id="login-title" data-i18n="app.title">Flucti</h1>
-      <p class="login-text" id="login-text">Inicia sesión para continuar</p>
-
-      <!-- Acceso con correo y contraseña (el texto de los botones cambia según el modo) -->
-      <div class="login-account" id="login-account">
-        <form class="login-form" id="login-form" novalidate>
-          <label class="visually-hidden" for="login-email" data-i18n="login.email">Correo electrónico</label>
-          <input class="field" id="login-email" type="email" inputmode="email" autocomplete="email"
-                 autocapitalize="none" spellcheck="false" maxlength="254"
-                 placeholder="Correo electrónico" data-i18n-placeholder="login.email">
-
-          <label class="visually-hidden" for="login-password" data-i18n="login.password">Contraseña</label>
-          <input class="field" id="login-password" type="password" autocomplete="current-password"
-                 placeholder="Contraseña" data-i18n-placeholder="login.password">
-
-          <label class="visually-hidden" id="login-confirm-label" for="login-confirm" hidden
-                 data-i18n="login.confirm">Repite la contraseña</label>
-          <input class="field" id="login-confirm" type="password" autocomplete="new-password" hidden
-                 placeholder="Repite la contraseña" data-i18n-placeholder="login.confirm">
-
-          <button class="primary-btn" id="login-submit" type="submit">Iniciar sesión</button>
-        </form>
-        <button class="link-btn" id="login-mode-btn" type="button">¿No tienes cuenta? Crear cuenta</button>
-      </div>
-
-      <div class="login-dev" id="login-dev" hidden>
-        <p class="login-notice" id="login-notice"></p>
-        <button class="text-btn" id="login-dev-btn" type="button" data-i18n="login.dev">Entrar en modo de desarrollo</button>
-      </div>
-
-      <p class="login-error" id="login-error" role="alert"></p>
-      <button class="text-btn" id="login-back" type="button" hidden data-i18n="login.back">Volver</button>
+  <!-- Parámetros de una tarea: cerrar la ventana la guarda (sin título se descarta) -->
+  <dialog class="modal modal-wide" id="task-dialog" aria-labelledby="task-dialog-title">
+    <div class="modal-body">
+      <header class="modal-head">
+        <h2 class="modal-title" id="task-dialog-title" data-i18n="task.dialog.new">Nueva tarea</h2>
+        <button class="icon-btn" id="task-close" type="button" aria-label="Cerrar" data-i18n-aria-label="dialog.close">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </header>
+      <div id="task-kind"></div>
+      <div class="task-fields" id="task-fields"></div>
+      <p class="form-error" id="task-error" role="alert"></p>
+      <button class="primary-btn" id="task-save-btn" type="button" data-i18n="task.saveButton">Guardar</button>
     </div>
+  </dialog>
 
-    <button class="icon-btn lang-btn login-lang" type="button" data-language-toggle>
-      <span class="language-code">ES</span>
-    </button>
-  </section>
+  <!-- Opciones de una lista: nombre, orden, ocultar y eliminar -->
+  <dialog class="modal modal-wide" id="list-dialog" aria-labelledby="list-dialog-title">
+    <div class="modal-body">
+      <header class="modal-head">
+        <h2 class="modal-title" id="list-dialog-title" data-i18n="list.dialog.title">Lista</h2>
+        <button class="icon-btn" id="list-close" type="button" aria-label="Cerrar" data-i18n-aria-label="dialog.close">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </header>
+      <div id="list-body"></div>
+    </div>
+  </dialog>
 
   <script src="languages.js"></script>
-  <script src="auth.js"></script>
+  <script src="i18n.js"></script>
+  <script src="tasks.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

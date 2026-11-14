@@ -16,6 +16,7 @@
   /* Forma y espacio */
   --radius-s: 4px;
   --radius-m: 10px;
+  --control: 3rem; /* alto del campo de la tarea y lado de los botones cuadrados */
   --space-s: 0.75rem;
   --space-m: 1.5rem;
   --space-l: 3rem;
@@ -211,31 +212,46 @@ body.ready .tasks::before {
   padding-bottom: calc(var(--space-l) + env(safe-area-inset-bottom, 0px));
 }
 
-.tasks-title {
+.tasks-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-s);
   margin: 0 0 var(--space-m);
-  font-size: var(--text-xl);
-  font-weight: 600;
-  letter-spacing: -0.01em;
   opacity: 0;
   transform: translateY(6px);
   transition: opacity 0.3s var(--ease), transform 0.3s var(--ease);
 }
 
-.tasks.open .tasks-title {
+.tasks:not(.open) .tasks-head {
+  pointer-events: none;
+}
+
+.tasks.open .tasks-head {
   opacity: 1;
   transform: none;
 }
 
-/* Añadir tarea */
+.tasks-title {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+/* Añadir tarea: campo + guardar + parámetros (los botones son cuadrados y del mismo tamaño) */
 .add {
   display: flex;
-  gap: var(--space-s);
+  gap: 0.5rem;
 }
 
 .add-input {
   flex: 1;
   min-width: 0;
-  padding: 0.75rem 1rem;
+  height: var(--control);
+  padding: 0 1rem;
   font: inherit;
   color: var(--ink);
   background: var(--surface);
@@ -247,20 +263,29 @@ body.ready .tasks::before {
   color: var(--muted);
 }
 
-.add-btn {
-  padding: 0.75rem 1.25rem;
-  font: inherit;
-  font-weight: 500;
-  color: var(--bg);
-  background: var(--ink);
-  border: 0;
+.square-btn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--control);
+  height: var(--control);
+  padding: 0;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
   border-radius: var(--radius-m);
   cursor: pointer;
   transition: opacity 0.2s var(--ease);
 }
 
-.add-btn:hover {
-  opacity: 0.85;
+.square-btn.primary {
+  color: var(--bg);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.square-btn:hover {
+  opacity: 0.8;
 }
 
 /* Lista */
@@ -292,10 +317,98 @@ body.ready .tasks::before {
 
 .task-content {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 1rem;
-  padding: 0.9rem 0.25rem;
+  padding: 0.9rem 0.6rem;
   border-bottom: 1px solid var(--line);
+}
+
+.task-content .check {
+  margin-top: 0.12rem;
+}
+
+.task-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.task-desc {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: var(--text-s);
+  color: var(--muted);
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.75rem;
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.meta-overdue {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Las tareas que vencen mañana se resaltan con una franja y un fondo suave del color de acento. */
+.meta-tomorrow {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.task.due-tomorrow .task-content {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+  border-radius: var(--radius-s);
+}
+
+/* Energía: tres barras, llenas según el nivel (baja 1, media 2, alta 3) */
+.energy {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 0.8rem;
+}
+
+.energy i {
+  width: 3px;
+  background: currentColor;
+  border-radius: 1px;
+  opacity: 0.25;
+}
+
+.energy i:nth-child(1) {
+  height: 0.35rem;
+}
+
+.energy i:nth-child(2) {
+  height: 0.55rem;
+}
+
+.energy i:nth-child(3) {
+  height: 0.8rem;
+}
+
+.energy[data-level="1"] i:nth-child(1),
+.energy[data-level="2"] i:nth-child(-n + 2),
+.energy[data-level="3"] i {
+  opacity: 1;
 }
 
 .task-name {
@@ -439,19 +552,23 @@ body.ready .tasks::before {
   letter-spacing: 0.04em;
 }
 
-/* 8. Ventana del menú ------------------------------------------------------ */
+/* 8. Ventanas (ajustes, tarea y lista) ------------------------------------- */
 html.modal-open {
   overflow: hidden;
 }
 
 .modal {
-  width: min(100% - 2.5rem, 28rem);
-  min-height: 14rem;
+  width: min(100% - 1.5rem, 28rem);
+  max-height: min(90dvh, 46rem);
   padding: 0;
   color: var(--ink);
   background: var(--surface);
   border: 0;
   border-radius: 1.25rem;
+}
+
+.modal-wide {
+  width: min(100% - 1.5rem, 34rem);
 }
 
 .modal[open] {
@@ -464,18 +581,31 @@ html.modal-open {
 }
 
 .modal-body {
-  position: relative;
-  min-height: 14rem;
-  padding: var(--space-m);
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end; /* las opciones de cuenta quedan abajo del todo */
+  padding: 0 var(--space-m) var(--space-m);
 }
 
-.modal-close {
-  position: absolute;
-  top: var(--space-s);
-  right: var(--space-s);
+.modal-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-s);
+  margin-bottom: var(--space-s);
+  padding: var(--space-s) 0;
+  background: var(--surface);
+}
+
+.modal-title {
+  margin: 0;
+  font-size: var(--text-l);
+  font-weight: 600;
+}
+
+.modal-body > .primary-btn {
+  width: 100%;
+  margin-top: var(--space-s);
 }
 
 @keyframes modal-in {
@@ -485,101 +615,30 @@ html.modal-open {
   }
 }
 
-.menu-actions {
-  display: flex;
-  flex-direction: column;
-  margin-top: var(--space-l);
-  border-top: 1px solid var(--line);
-}
-
-.menu-item {
-  padding: 0.9rem 0.25rem;
-  font: inherit;
-  text-align: left;
-  color: var(--ink);
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  cursor: pointer;
-  transition: opacity 0.2s var(--ease);
-}
-
-.menu-item:last-child {
-  border-bottom: 0;
-}
-
-.menu-item:hover {
-  opacity: 0.7;
-}
-
-/* 9. Inicio de sesión: rectángulo a pantalla completa con los colores del cielo ---- */
-html.login-open {
-  overflow: hidden;
-}
-
-.login {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: grid;
-  place-items: center;
-  padding: var(--space-m);
-  color: var(--ink);
-  background: var(--bg);
-  text-align: center;
-}
-
-body.ready .login {
-  transition: background-color 1.2s var(--ease), color 1.2s var(--ease);
-}
-
-.login-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-s);
-  width: min(100%, 22rem);
-}
-
-.login-title {
-  margin: 0;
-  font-size: clamp(3rem, 12vw, 5.5rem);
-  font-weight: 200;
-  line-height: 1;
-  letter-spacing: -0.02em;
-}
-
-.login-text {
-  margin: 0 0 var(--space-m);
-  color: var(--muted);
-}
-
-.login-account {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--space-s);
-  width: 100%;
-}
-
-.login-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-s);
-}
-
+/* 9. Campos, botones y deslizador ------------------------------------------ */
 .field {
   width: 100%;
-  padding: 0.75rem 1rem;
+  padding: 0.7rem 0.9rem;
   font: inherit;
   color: var(--ink);
-  background: var(--surface);
+  background: var(--bg);
   border: 1px solid var(--line);
   border-radius: var(--radius-m);
 }
 
 .field::placeholder {
   color: var(--muted);
+}
+
+.field.narrow {
+  flex: none;
+  width: 5rem;
+  text-align: center;
+}
+
+textarea.field {
+  min-height: 4.5rem;
+  resize: vertical;
 }
 
 .primary-btn {
@@ -598,39 +657,6 @@ body.ready .login {
   opacity: 0.85;
 }
 
-.primary-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.link-btn {
-  padding: 0.5rem;
-  font: inherit;
-  font-size: var(--text-s);
-  color: var(--muted);
-  background: transparent;
-  border: 0;
-  text-decoration: underline;
-  text-underline-offset: 0.2em;
-  cursor: pointer;
-}
-
-.link-btn:hover {
-  color: var(--ink);
-}
-
-.login-notice {
-  margin: 0 0 var(--space-s);
-  font-size: var(--text-s);
-  color: var(--muted);
-}
-
-.login-error {
-  min-height: 1.5em;
-  margin: 0;
-  font-size: var(--text-s);
-}
-
 .text-btn {
   padding: 0.75rem 1.25rem;
   font: inherit;
@@ -647,8 +673,349 @@ body.ready .login {
   opacity: 0.7;
 }
 
-.login-lang {
+.text-btn:disabled,
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.text-btn.danger {
+  color: color-mix(in srgb, #e5484d 75%, var(--ink));
+}
+
+.icon-btn.small {
+  width: 2rem;
+  height: 2rem;
+}
+
+.form-error {
+  min-height: 1.2em;
+  margin: var(--space-s) 0 0;
+  font-size: var(--text-s);
+  color: color-mix(in srgb, #e5484d 75%, var(--ink));
+}
+
+/* Deslizador de varias opciones (tipo de tarea, tipo de repetición) */
+.segmented {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--count, 2), 1fr);
+  padding: 0.25rem;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.segmented-thumb {
   position: absolute;
-  right: calc(var(--space-s) + env(safe-area-inset-right, 0px));
-  bottom: calc(var(--space-s) + env(safe-area-inset-bottom, 0px));
+  inset: 0.25rem auto 0.25rem 0.25rem;
+  width: calc((100% - 0.5rem) / var(--count, 2));
+  background: var(--ink);
+  border-radius: 999px;
+  transform: translateX(calc(var(--index, 0) * 100%));
+  transition: transform 0.25s var(--ease);
+}
+
+.segmented-option {
+  position: relative;
+  z-index: 1;
+  padding: 0.55rem 0.75rem;
+  font: inherit;
+  font-size: var(--text-s);
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.25s var(--ease);
+}
+
+.segmented-option[aria-checked="true"] {
+  color: var(--bg);
+}
+
+/* 10. Formulario de la tarea ----------------------------------------------- */
+.task-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-m);
+  margin-top: var(--space-m);
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.field-label {
+  font-size: var(--text-s);
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.field-group.invalid .field {
+  border-color: color-mix(in srgb, #e5484d 75%, var(--ink));
+}
+
+.field-group.invalid .field-label {
+  color: color-mix(in srgb, #e5484d 75%, var(--ink));
+}
+
+.date-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.date-row .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.req {
+  opacity: 0.7;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.check-row input,
+.param-check {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--accent);
+}
+
+.recurrence {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-s);
+}
+
+.repeat-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.repeat-row select.field {
+  flex: 1;
+  width: auto;
+}
+
+.repeat-label {
+  font-size: var(--text-s);
+  color: var(--muted);
+}
+
+.weekdays {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.day-chip {
+  min-width: 2.6rem;
+  padding: 0.45rem 0.6rem;
+  font: inherit;
+  font-size: var(--text-s);
+  color: var(--muted);
+  text-transform: capitalize;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.day-chip[aria-pressed="true"] {
+  color: var(--bg);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+/* 11. Ajustes y opciones de lista ------------------------------------------ */
+.settings-section + .settings-section,
+#list-body > * + * {
+  margin-top: var(--space-l);
+}
+
+.settings-heading {
+  margin: 0 0 0.25rem;
+  font-size: var(--text-m);
+  font-weight: 600;
+}
+
+.settings-hint {
+  margin: 0 0 var(--space-s);
+  font-size: var(--text-s);
+  color: var(--muted);
+}
+
+.param-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, 3.4rem) 2rem;
+  align-items: center;
+  border-top: 1px solid var(--line);
+}
+
+.param-header {
+  border-top: 0;
+  font-size: 0.7rem;
+  text-align: center;
+  color: var(--muted);
+}
+
+.param-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0.55rem 0;
+}
+
+.param-name small {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.param-cell {
+  display: grid;
+  place-items: center;
+}
+
+.param-na {
+  text-align: center;
+  color: var(--muted);
+}
+
+.param-grid {
+  margin-bottom: var(--space-s);
+}
+
+.param-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: var(--space-s);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+}
+
+.param-form .field {
+  background: var(--surface);
+}
+
+.check-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+}
+
+.form-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.list-row.is-hidden .list-open-name {
+  color: var(--muted);
+}
+
+.list-open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.7rem 0.25rem;
+  font: inherit;
+  text-align: left;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.list-open-name {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.list-open small {
+  color: var(--muted);
+}
+
+.sort-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 2rem 2rem;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+/* 12. Listas en la pantalla de inicio ------------------------------------- */
+.lists {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  max-width: 30rem;
+  margin: var(--space-m) auto 0;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.25rem;
+  padding: 0.4rem 0.9rem;
+  font: inherit;
+  font-size: var(--text-s);
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+
+.chip:hover {
+  color: var(--ink);
+}
+
+.chip[aria-pressed="true"] {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.chip-count {
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.chip-add {
+  padding: 0.4rem 0.6rem;
+}
+
+.chip-field {
+  min-width: 8rem;
+  min-height: 2.25rem;
+  padding: 0.4rem 0.9rem;
+  font: inherit;
+  font-size: var(--text-s);
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--ink);
+  border-radius: 999px;
 }
