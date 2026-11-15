@@ -5,100 +5,26 @@
 
    Datos (localStorage "flucti:data:v1"):
      params: qué parámetros tiene una tarea (los que trae la app y los que añade el usuario)
-     lists:  listas { id, name, hidden, sort }; name null = nombre por defecto ("Actual")
-     tasks:  tareas { id, listId, kind, title, values, recurrence, createdAt }
+     lists:  listas { id, name, hidden, showCompleted, sort }; name null = nombre por defecto ("Actual")
+     tasks:  tareas { id, listId, kind, title, values, recurrence, done, completedAt, createdAt }
+
+   Norma: ninguna actualización borra las tareas guardadas. Al cambiar el formato de los datos se
+   guarda antes una copia de seguridad, y las tareas completadas se marcan en vez de eliminarse.
    ========================================================================== */
 (() => {
   const { t, tn } = I18n;
+  const { h, icon, uid, clone, dates, segmented, dropdown, datePicker, timePicker } = UI;
+  const { toDateString, parseDateString, diffDays, todayString, addDays, addMonths, WEEK_ORDER, weekdayName } = dates;
   const $ = (id) => document.getElementById(id);
 
   const STORAGE_KEY = "flucti:data:v1";
+  const STATE_VERSION = 2;
   const STRIKE_DELAY = 380; // tiempo que se ve la tarea tachada
   const LEAVE_DURATION = 320; // duración de la animación de salida
 
   /* ------------------------------------------------------------------------
-     Utilidades: construir elementos, iconos e identificadores
+     Fechas en pantalla
      ------------------------------------------------------------------------ */
-  const PROPS = new Set(["value", "checked", "disabled", "hidden", "selected"]);
-
-  // h("div", { class: "x", onclick: fn }, hijo1, [hijo2, hijo3]) → elemento del DOM
-  function h(tag, props = {}, ...children) {
-    const el = document.createElement(tag);
-    for (const [key, value] of Object.entries(props)) {
-      if (value === undefined || value === null || value === false) continue;
-      if (key === "class") el.className = value;
-      else if (key === "text") el.textContent = value;
-      else if (key === "html") el.innerHTML = value;
-      else if (key === "dataset") Object.assign(el.dataset, value);
-      else if (key.startsWith("on")) el.addEventListener(key.slice(2), value);
-      else if (PROPS.has(key)) el[key] = value;
-      else el.setAttribute(key, value === true ? "" : String(value));
-    }
-    for (const child of children.flat()) {
-      if (child !== null && child !== undefined && child !== false) el.append(child);
-    }
-    return el;
-  }
-
-  const ICONS = {
-    plus: '<path d="M12 5v14M5 12h14"/>',
-    close: '<path d="M6 6l12 12M18 6L6 18"/>',
-    up: '<path d="M6 15l6-6 6 6"/>',
-    chevron: '<path d="M9 6l6 6-6 6"/>',
-    repeat: '<path d="M17 2l4 4-4 4M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H3"/>',
-    trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12h10l1-12M9 7V4h6v3"/>',
-    eye: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
-    eyeOff: '<path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.2 4M6.2 6.6C3.6 8.4 2 12 2 12s4 7 10 7a9.7 9.7 0 0 0 4.1-.9"/>',
-  };
-
-  const icon = (name, size = 20) =>
-    h("span", {
-      class: "icon",
-      "aria-hidden": "true",
-      html: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`,
-    });
-
-  const uid = () =>
-    window.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-
-  const clone = (value) => JSON.parse(JSON.stringify(value));
-
-  /* ------------------------------------------------------------------------
-     Fechas ("AAAA-MM-DD" como texto, en hora local)
-     ------------------------------------------------------------------------ */
-  const pad2 = (n) => String(n).padStart(2, "0");
-  const toDateString = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-
-  function parseDateString(text) {
-    const [y, m, d] = text.split("-").map(Number);
-    return new Date(y, m - 1, d);
-  }
-
-  function dayNumber(text) {
-    const [y, m, d] = text.split("-").map(Number);
-    return Math.floor(Date.UTC(y, m - 1, d) / 86400000);
-  }
-
-  const diffDays = (text, base) => dayNumber(text) - dayNumber(base);
-  const todayString = () => toDateString(Flucti.now());
-
-  function addDays(text, n) {
-    const d = parseDateString(text);
-    d.setDate(d.getDate() + n);
-    return toDateString(d);
-  }
-
-  // Suma meses sin salirse del mes (31 de enero + 1 mes = 28 o 29 de febrero).
-  function addMonths(text, n) {
-    const [, , day] = text.split("-").map(Number);
-    const first = parseDateString(text);
-    first.setDate(1);
-    first.setMonth(first.getMonth() + n);
-    const lastDay = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
-    first.setDate(Math.min(day, lastDay));
-    return toDateString(first);
-  }
-
   function shortDate(text, today) {
     const sameYear = text.slice(0, 4) === today.slice(0, 4);
     const options = { weekday: "short", day: "numeric", month: "short", ...(sameYear ? {} : { year: "numeric" }) };
@@ -116,25 +42,21 @@
     return { text: text + (value.time ? ` ${value.time}` : ""), diff };
   }
 
-  const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]; // lunes primero (0 = domingo)
-
-  function weekdayShort(day) {
-    return new Intl.DateTimeFormat(I18n.current().locale, { weekday: "short" }).format(new Date(2021, 0, 3 + day));
-  }
-
   /* ------------------------------------------------------------------------
      Parámetros de las tareas
      Los que trae la app tienen una definición fija (BUILTIN); del usuario solo se guarda
      en qué tipos de tarea aparecen (once / recurring) y si son obligatorios.
+     Todos se pueden quitar excepto el título. Al quitar un parámetro no se borra lo que ya
+     tienen guardado las tareas: si se vuelve a añadir, reaparece.
      ------------------------------------------------------------------------ */
   const TYPES = ["text", "textarea", "number", "date", "select", "checkbox"];
 
   const BUILTIN = {
-    title: { type: "text", kinds: ["once", "recurring"], locked: true },
+    title: { type: "text", kinds: ["once", "recurring"], locked: true }, // no se puede quitar ni hacer opcional
     description: { type: "textarea", kinds: ["once", "recurring"] },
     due: { type: "date", kinds: ["once"] },
     date: { type: "date", kinds: ["recurring"] },
-    repeat: { type: "recurrence", kinds: ["recurring"], locked: true },
+    repeat: { type: "recurrence", kinds: ["recurring"], alwaysRequired: true },
     planned: { type: "date", kinds: ["once", "recurring"] },
     energy: { type: "select", kinds: ["once", "recurring"], options: ["high", "medium", "low"] },
   };
@@ -157,35 +79,39 @@
   ];
 
   /* ------------------------------------------------------------------------
-     Estado: carga, normalización, migración y guardado
+     Estado: carga, normalización, copia de seguridad, migración y guardado
      ------------------------------------------------------------------------ */
   function defaultState() {
     const listId = uid();
     return {
-      version: 1,
+      version: STATE_VERSION,
       params: DEFAULT_PARAMS.map((p) => ({ ...p })),
-      lists: [{ id: listId, name: null, hidden: false, sort: clone(DEFAULT_SORT) }],
+      lists: [{ id: listId, name: null, hidden: false, showCompleted: false, sort: clone(DEFAULT_SORT) }],
       currentListId: listId,
       tasks: [],
     };
   }
 
+  // Deja los datos en el formato actual sin perder ninguna tarea.
   function normalizeState(data) {
     const base = defaultState();
     if (!data || typeof data !== "object") return base;
 
     const params = [];
+    const seen = new Set();
     for (const p of Array.isArray(data.params) ? data.params : []) {
-      if (!p || typeof p.id !== "string") continue;
-      if (BUILTIN[p.id]) {
-        const def = BUILTIN[p.id];
+      if (!p || typeof p.id !== "string" || seen.has(p.id)) continue;
+      const def = BUILTIN[p.id];
+      if (def) {
+        seen.add(p.id);
         params.push({
           id: p.id,
-          once: def.kinds.includes("once") && (def.locked || p.once === true),
-          recurring: def.kinds.includes("recurring") && (def.locked || p.recurring === true),
-          required: def.locked || p.required === true,
+          once: def.kinds.includes("once") && (def.locked === true || p.once === true),
+          recurring: def.kinds.includes("recurring") && (def.locked === true || p.recurring === true),
+          required: def.locked === true || def.alwaysRequired === true || p.required === true,
         });
       } else if (TYPES.includes(p.type) && typeof p.name === "string" && p.name) {
+        seen.add(p.id);
         params.push({
           id: p.id,
           type: p.type,
@@ -197,7 +123,7 @@
         });
       }
     }
-    for (const def of DEFAULT_PARAMS) if (!params.some((p) => p.id === def.id)) params.push({ ...def });
+    if (!seen.has("title")) params.unshift({ ...DEFAULT_PARAMS[0] });
 
     const lists = (Array.isArray(data.lists) ? data.lists : [])
       .filter((l) => l && typeof l.id === "string")
@@ -205,6 +131,7 @@
         id: l.id,
         name: typeof l.name === "string" && l.name.trim() ? l.name : null,
         hidden: l.hidden === true,
+        showCompleted: l.showCompleted === true,
         sort: Array.isArray(l.sort)
           ? l.sort.filter((s) => s && typeof s.by === "string" && (s.dir === "asc" || s.dir === "desc")).map((s) => ({ by: s.by, dir: s.dir }))
           : clone(DEFAULT_SORT),
@@ -212,24 +139,29 @@
     if (!lists.length) lists.push(base.lists[0]);
     if (lists.every((l) => l.hidden)) lists[0].hidden = false;
 
+    // Las tareas nunca se descartan: si algún dato falta se rellena con un valor por defecto.
     const tasks = [];
     for (const x of Array.isArray(data.tasks) ? data.tasks : []) {
-      if (!x || typeof x.id !== "string" || typeof x.title !== "string" || !x.title.trim()) continue;
+      if (!x || typeof x !== "object" || typeof x.id !== "string") continue;
+      const recurring = x.kind === "recurring" && x.recurrence && typeof x.recurrence === "object";
       const task = {
         id: x.id,
         listId: lists.some((l) => l.id === x.listId) ? x.listId : lists[0].id,
-        kind: x.kind === "recurring" && x.recurrence ? "recurring" : "once",
-        title: x.title,
+        kind: recurring ? "recurring" : "once",
+        title: typeof x.title === "string" && x.title.trim() ? x.title : "—",
         values: x.values && typeof x.values === "object" ? x.values : {},
         createdAt: Number.isFinite(x.createdAt) ? x.createdAt : Date.now(),
       };
-      if (task.kind === "recurring") task.recurrence = x.recurrence;
+      if (recurring) task.recurrence = x.recurrence;
+      else if (x.done === true) {
+        task.done = true;
+        task.completedAt = Number.isFinite(x.completedAt) ? x.completedAt : task.createdAt;
+      }
       tasks.push(task);
     }
 
-    const visible = lists.filter((l) => !l.hidden);
-    const current = lists.find((l) => l.id === data.currentListId && !l.hidden) || visible[0];
-    return { version: 1, params, lists, currentListId: current.id, tasks };
+    const current = lists.find((l) => l.id === data.currentListId && !l.hidden) || lists.find((l) => !l.hidden);
+    return { version: STATE_VERSION, params, lists, currentListId: current.id, tasks };
   }
 
   // Recoge las tareas de versiones anteriores de la app (lista simple, por cuenta o con sincronización).
@@ -269,12 +201,31 @@
     }
   }
 
-  function loadState() {
+  // Guarda una copia tal cual estaba antes de cambiar el formato de los datos (una sola vez por versión).
+  function backup(raw, suffix) {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return normalizeState(JSON.parse(raw));
+      const key = `${STORAGE_KEY}:${suffix}`;
+      if (localStorage.getItem(key) === null) localStorage.setItem(key, raw);
     } catch {
-      /* datos dañados: se empieza de cero */
+      /* sin espacio o sin almacenamiento: no se puede hacer la copia */
+    }
+  }
+
+  function loadState() {
+    let raw = null;
+    try {
+      raw = localStorage.getItem(STORAGE_KEY);
+    } catch {
+      /* se ignora */
+    }
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || parsed.version !== STATE_VERSION) backup(raw, `backup-v${(parsed && parsed.version) || 0}`);
+        return normalizeState(parsed);
+      } catch {
+        backup(raw, "corrupt"); // datos ilegibles: se conservan aparte antes de empezar de cero
+      }
     }
     const fresh = defaultState();
     migrateOldTasks(fresh);
@@ -295,13 +246,9 @@
      Consultas sobre el estado
      ------------------------------------------------------------------------ */
   const visibleLists = () => state.lists.filter((l) => !l.hidden);
-  const currentList = () => state.lists.find((l) => l.id === state.currentListId) || state.lists[0];
   const listName = (list) => list.name || t("list.default");
-
-  function ensureCurrentList() {
-    const current = state.lists.find((l) => l.id === state.currentListId);
-    if (!current || current.hidden) state.currentListId = (visibleLists()[0] || state.lists[0]).id;
-  }
+  const hasParam = (id) => state.params.some((p) => p.id === id);
+  const recurringAvailable = () => hasParam("repeat"); // sin regla de repetición no hay tareas recurrentes nuevas
 
   // Parámetro con todos sus datos: nombre traducido, tipo, en qué tareas aparece y si es obligatorio.
   function paramInfo(p) {
@@ -312,6 +259,7 @@
       type: def ? def.type : p.type,
       kinds: def ? def.kinds : ["once", "recurring"],
       locked: Boolean(def && def.locked),
+      fixedRequired: Boolean(def && (def.locked || def.alwaysRequired)),
       options: def ? def.options || null : p.options || null,
       name: def ? t(`param.${p.id}`) : p.name,
       once: p.once,
@@ -332,15 +280,13 @@
   const dateKey = (v) => (v && v.date ? `${v.date}T${v.time || "23:59"}` : null);
   const kindOfType = (type) => ({ date: "date", number: "number", select: "level", checkbox: "level" })[type] || "text";
 
-  // Criterios por los que se puede ordenar una lista.
+  // Criterios por los que se puede ordenar una lista (solo los de parámetros que existen).
   function sortCriteria() {
-    const criteria = [
-      { id: "due", label: t("param.due"), kind: "date" },
-      { id: "planned", label: t("param.planned"), kind: "date" },
-      { id: "energy", label: t("param.energy"), kind: "level" },
-      { id: "title", label: t("param.title"), kind: "text" },
-      { id: "created", label: t("sort.created"), kind: "created" },
-    ];
+    const criteria = [];
+    if (hasParam("due") || hasParam("date")) criteria.push({ id: "due", label: t("param.due"), kind: "date" });
+    if (hasParam("planned")) criteria.push({ id: "planned", label: t("param.planned"), kind: "date" });
+    if (hasParam("energy")) criteria.push({ id: "energy", label: t("param.energy"), kind: "level" });
+    criteria.push({ id: "title", label: t("param.title"), kind: "text" }, { id: "created", label: t("sort.created"), kind: "created" });
     for (const p of allParams()) if (!p.builtin) criteria.push({ id: p.id, label: p.name, kind: kindOfType(p.type) });
     return criteria;
   }
@@ -443,9 +389,7 @@
   }
 
   function repeatSummary(rec) {
-    if (rec.mode === "weekdays") {
-      return WEEK_ORDER.filter((d) => rec.days.includes(d)).map(weekdayShort).join(", ");
-    }
+    if (rec.mode === "weekdays") return WEEK_ORDER.filter((d) => rec.days.includes(d)).map((d) => weekdayName(d)).join(", ");
     if (rec.every === 1) return t(`repeat.summary.${rec.unit}`);
     return t("repeat.summary.many", { count: rec.every, unit: tn(`repeat.unit.${rec.unit}`, rec.every) });
   }
@@ -454,7 +398,7 @@
     rec.mode === "weekdays" ? rec.days.length > 0 : Number.isInteger(rec.every) && rec.every >= 1 && rec.every <= 999;
 
   /* ------------------------------------------------------------------------
-     Lista de tareas en pantalla
+     Tareas en pantalla
      ------------------------------------------------------------------------ */
   function formatValue(info, value) {
     if (info.type === "date") return value && value.date ? dateLabel(value, todayString()).text : "";
@@ -469,7 +413,7 @@
     const items = [];
 
     if (dueLabel) {
-      const extra = dueLabel.diff === 1 ? " meta-tomorrow" : dueLabel.diff < 0 ? " meta-overdue" : "";
+      const extra = task.done ? "" : dueLabel.diff === 1 ? " meta-tomorrow" : dueLabel.diff < 0 ? " meta-overdue" : "";
       items.push(h("span", { class: `meta${extra}`, text: dueLabel.text }));
     }
     if (task.kind === "recurring" && task.recurrence) {
@@ -508,15 +452,20 @@
   function taskElement(task, entering) {
     const due = dueOf(task);
     const dueLabel = due && due.date ? dateLabel(due, todayString()) : null;
-    const tomorrow = dueLabel && dueLabel.diff === 1; // las que vencen mañana se resaltan
-    const item = h("li", { class: `task${entering ? " entering" : ""}${tomorrow ? " due-tomorrow" : ""}`, dataset: { id: task.id } });
+    const tomorrow = !task.done && dueLabel && dueLabel.diff === 1; // las que vencen mañana se resaltan
+    const item = h("li", {
+      class: `task${entering ? " entering" : ""}${tomorrow ? " due-tomorrow" : ""}${task.done ? " is-completed" : ""}`,
+      dataset: { id: task.id },
+    });
 
     const checkbox = h("input", {
       type: "checkbox",
       class: "check",
+      checked: task.done === true,
       "aria-label": t("task.complete", { name: task.title }),
       onchange: (event) => {
-        if (event.target.checked) completeTask(task.id, item);
+        if (task.done && !event.target.checked) restoreTask(task);
+        else if (!task.done && event.target.checked) completeTask(task, item);
       },
     });
     const meta = metaItems(task, dueLabel);
@@ -531,80 +480,195 @@
     return item;
   }
 
-  function updateEmpty() {
-    $("empty").hidden = state.tasks.some((x) => x.listId === state.currentListId);
-  }
-
-  function renderTasks(enteringId) {
-    const list = currentList();
-    const tasks = sortTasks(state.tasks.filter((x) => x.listId === list.id), list.sort);
-    $("task-list").replaceChildren(...tasks.map((x) => taskElement(x, x.id === enteringId)));
-    updateEmpty();
-  }
-
-  function completeTask(id, item) {
-    const task = state.tasks.find((x) => x.id === id);
-    if (!task) return;
+  // Las tareas únicas completadas se marcan (no se borran) y se muestran u ocultan según la lista.
+  function completeTask(task, item) {
     item.classList.add("done");
+    const list = state.lists.find((l) => l.id === task.listId);
 
     if (task.kind === "recurring") {
       advanceRecurring(task, todayString()); // vuelve a aparecer con su siguiente fecha
       saveState();
-      setTimeout(() => renderTasks(), STRIKE_DELAY);
+      setTimeout(() => renderGrid(), STRIKE_DELAY);
       return;
     }
-    state.tasks = state.tasks.filter((x) => x.id !== id);
+    task.done = true;
+    task.completedAt = Date.now();
     saveState();
     setTimeout(() => {
+      if (list && list.showCompleted) {
+        renderGrid();
+        return;
+      }
       item.classList.add("leaving");
-      setTimeout(() => {
-        item.remove();
-        updateEmpty();
-        renderHomeLists();
-      }, LEAVE_DURATION);
+      setTimeout(() => renderGrid(), LEAVE_DURATION);
     }, STRIKE_DELAY);
   }
 
-  function renderHead() {
-    $("tasks-title").textContent = listName(currentList());
+  function restoreTask(task) {
+    delete task.done;
+    delete task.completedAt;
+    saveState();
+    renderGrid();
   }
 
   /* ------------------------------------------------------------------------
-     Listas en la pantalla de inicio
+     Listas: una tarjeta por lista, con sus tareas dentro
      ------------------------------------------------------------------------ */
+  const NEW_KEY = "__new__";
+  const titleDrafts = new Map(); // texto escrito en el campo de cada lista (se conserva al redibujar)
+  const inputs = new Map();
+  const errorEls = new Map();
+  const cardErrors = new Map();
+  let focusedKey = null; // campo que tiene el cursor (id de lista o NEW_KEY)
+  let rendering = false;
   let addingList = false;
+  let newListDraft = "";
+  let newListInput = null;
 
-  function selectList(id) {
-    state.currentListId = id;
+  function setCardError(id, text) {
+    if (text) cardErrors.set(id, text);
+    else cardErrors.delete(id);
+    const el = errorEls.get(id);
+    if (el) el.textContent = text;
+  }
+
+  function trackFocus(input, key) {
+    input.addEventListener("focus", () => (focusedKey = key));
+    input.addEventListener("blur", () => {
+      if (!rendering && focusedKey === key) focusedKey = null;
+    });
+  }
+
+  const cleanTitle = (text) => text.trim().replace(/\s+/g, " ");
+
+  // "Guardar": con solo el título se guarda al momento; si falta un parámetro obligatorio no se guarda.
+  function quickSave(list) {
+    const input = inputs.get(list.id);
+    const title = cleanTitle(input.value);
+    if (!title) {
+      input.focus();
+      return;
+    }
+    const missing = paramsFor("once").filter((p) => p.id !== "title" && p.required);
+    if (missing.length) {
+      setCardError(list.id, t("task.error.missing", { names: missing.map((p) => p.name).join(", ") }));
+      return;
+    }
+    const task = { id: uid(), listId: list.id, kind: "once", title, values: {}, createdAt: Date.now() };
+    state.tasks.push(task);
     saveState();
-    renderAll();
-    Flucti.goToTasks();
+    titleDrafts.delete(list.id);
+    cardErrors.delete(list.id);
+    focusedKey = list.id;
+    renderGrid(task.id);
+  }
+
+  function addRow(list) {
+    const input = h("input", {
+      class: "add-input",
+      type: "text",
+      maxlength: 120,
+      placeholder: t("task.input.placeholder"),
+      "aria-label": t("task.input.label"),
+      value: titleDrafts.get(list.id) || "",
+      oninput: (event) => {
+        titleDrafts.set(list.id, event.target.value);
+        setCardError(list.id, "");
+      },
+    });
+    trackFocus(input, list.id);
+    inputs.set(list.id, input);
+    return h(
+      "form",
+      { class: "add", autocomplete: "off", onsubmit: (event) => (event.preventDefault(), quickSave(list)) },
+      input,
+      h("button", { class: "square-btn primary", type: "submit", "aria-label": t("task.save") }, icon("plus", 22)),
+      h("button", { class: "square-btn", type: "button", "aria-haspopup": "dialog", "aria-label": t("task.params"), onclick: () => openTaskDialog(list) }, icon("sliders", 22))
+    );
+  }
+
+  function buildCard(list, enteringId) {
+    const pending = sortTasks(state.tasks.filter((x) => x.listId === list.id && !x.done), list.sort);
+    const completed = list.showCompleted
+      ? state.tasks.filter((x) => x.listId === list.id && x.done).sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0))
+      : [];
+
+    const error = h("p", { class: "card-error", role: "alert", text: cardErrors.get(list.id) || "" });
+    errorEls.set(list.id, error);
+
+    return h(
+      "section",
+      { class: "list-card", dataset: { list: list.id }, "aria-label": listName(list) },
+      h(
+        "header",
+        { class: "card-head" },
+        h("h2", { class: "card-title", text: listName(list) }),
+        pending.length ? h("span", { class: "card-count", text: String(pending.length) }) : null,
+        h(
+          "button",
+          { class: "icon-btn", type: "button", "aria-haspopup": "dialog", "aria-label": `${t("list.options")}: ${listName(list)}`, onclick: () => openListDialog(list.id) },
+          icon("dots", 22)
+        )
+      ),
+      addRow(list),
+      error,
+      h("ul", { class: "list" }, pending.map((x) => taskElement(x, x.id === enteringId))),
+      h("p", { class: "card-empty", text: t("task.empty"), hidden: pending.length > 0 }),
+      completed.length
+        ? h(
+            "div",
+            { class: "completed" },
+            h("h3", { class: "completed-title", text: `${t("task.completed.title")} · ${completed.length}` }),
+            h("ul", { class: "list" }, completed.map((x) => taskElement(x, false)))
+          )
+        : null
+    );
   }
 
   function createList(name) {
-    const list = { id: uid(), name, hidden: false, sort: clone(DEFAULT_SORT) };
-    state.lists.push(list);
-    state.currentListId = list.id;
+    state.lists.push({ id: uid(), name, hidden: false, showCompleted: false, sort: clone(DEFAULT_SORT) });
     saveState();
-    renderAll();
+    renderGrid();
   }
 
-  function newListField() {
+  // Última "tarjeta": un recuadro para crear otra lista (se convierte en un campo para el nombre).
+  function newListCard() {
+    if (!addingList) {
+      return h(
+        "button",
+        {
+          class: "list-card list-card-add",
+          type: "button",
+          "aria-label": t("list.add"),
+          onclick: () => {
+            addingList = true;
+            focusedKey = NEW_KEY;
+            renderGrid();
+          },
+        },
+        icon("plus", 20),
+        h("span", { text: t("list.new.placeholder") })
+      );
+    }
     const input = h("input", {
-      class: "chip-field",
+      class: "add-input",
       type: "text",
       maxlength: 30,
       placeholder: t("list.new.placeholder"),
       "aria-label": t("list.new.placeholder"),
+      value: newListDraft,
+      oninput: (event) => (newListDraft = event.target.value),
     });
     let finished = false;
     const finish = (create) => {
       if (finished) return;
       finished = true;
       addingList = false;
-      const name = input.value.trim();
+      focusedKey = null;
+      const name = cleanTitle(input.value);
+      newListDraft = "";
       if (create && name) createList(name);
-      else renderHomeLists();
+      else renderGrid();
     };
     input.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
@@ -614,86 +678,38 @@
         finish(false);
       }
     });
-    input.addEventListener("blur", () => finish(true)); // al salir se crea si hay nombre
-    setTimeout(() => input.focus(), 0);
-    return input;
-  }
-
-  function renderHomeLists() {
-    const chips = visibleLists().map((list) => {
-      const count = state.tasks.filter((x) => x.listId === list.id).length;
-      return h(
-        "button",
-        {
-          class: "chip",
-          type: "button",
-          "aria-pressed": String(list.id === state.currentListId),
-          onclick: () => selectList(list.id),
-        },
-        h("span", { text: listName(list) }),
-        count ? h("span", { class: "chip-count", text: String(count) }) : null
-      );
+    input.addEventListener("blur", () => {
+      if (!rendering) finish(true); // al salir se crea si hay nombre
     });
-    const add = addingList
-      ? newListField()
-      : h(
-          "button",
-          {
-            class: "chip chip-add",
-            type: "button",
-            "aria-label": t("list.add"),
-            onclick: () => {
-              addingList = true;
-              renderHomeLists();
-            },
-          },
-          icon("plus", 16)
-        );
-    $("home-lists").replaceChildren(...chips, add);
+    trackFocus(input, NEW_KEY);
+    newListInput = input;
+    return h("div", { class: "list-card list-card-new" }, input);
   }
 
-  function renderAll(enteringId) {
-    ensureCurrentList();
-    renderHomeLists();
-    renderHead();
-    renderTasks(enteringId);
-  }
+  function renderGrid(enteringId) {
+    rendering = true;
+    const restore = focusedKey;
+    inputs.clear();
+    errorEls.clear();
+    newListInput = null;
+    const cards = visibleLists().map((list) => buildCard(list, enteringId));
+    cards.push(newListCard());
+    $("lists-grid").replaceChildren(...cards);
+    rendering = false;
 
-  /* ------------------------------------------------------------------------
-     Elemento "deslizador" de varias opciones (tipo de tarea, tipo de repetición)
-     ------------------------------------------------------------------------ */
-  function segmented({ label, options, value, onChange }) {
-    const root = h("div", { class: "segmented", role: "radiogroup", "aria-label": label });
-    root.style.setProperty("--count", String(options.length));
-    const buttons = [];
-    const paint = (index) => {
-      root.style.setProperty("--index", String(index));
-      buttons.forEach((button, i) => button.setAttribute("aria-checked", String(i === index)));
-    };
-    root.append(h("span", { class: "segmented-thumb", "aria-hidden": "true" }));
-    options.forEach((option, index) => {
-      const button = h("button", {
-        type: "button",
-        role: "radio",
-        class: "segmented-option",
-        text: option.label,
-        onclick: () => {
-          paint(index);
-          onChange(option.value);
-        },
-      });
-      buttons.push(button);
-      root.append(button);
-    });
-    paint(Math.max(0, options.findIndex((o) => o.value === value)));
-    return root;
+    const el = restore === NEW_KEY ? newListInput : restore ? inputs.get(restore) : null;
+    if (el) {
+      el.focus();
+      if (el.setSelectionRange) el.setSelectionRange(el.value.length, el.value.length);
+    }
   }
 
   /* ------------------------------------------------------------------------
      Ventana de la tarea (parámetros)
-     Cerrarla guarda la tarea; sin título se descarta; si falta un campo obligatorio no se cierra.
+     Cerrarla guarda la tarea; sin título se descarta; si falta un campo obligatorio no se guarda
+     y se avisa de cuál es.
      ------------------------------------------------------------------------ */
-  let draft = null; // { kind, values, recurrence, showErrors }
+  let draft = null; // { listId, kind, values, recurrence, showErrors }
 
   const isEmptyValue = (info, v) => {
     if (info.type === "date") return !(v && v.date);
@@ -711,26 +727,20 @@
 
   function dateControl(info) {
     const v = draft.values[info.id] || (draft.values[info.id] = { date: "", time: "" });
-    const time = h("input", {
-      class: "field",
-      type: "time",
-      "aria-label": t("field.time"),
+    const time = timePicker({
       value: v.time,
+      label: t("field.time"),
+      placeholder: t("field.time"),
       disabled: !v.date,
-      oninput: (event) => (v.time = event.target.value),
+      onChange: (value) => (v.time = value),
     });
-    const date = h("input", {
-      class: "field",
-      type: "date",
-      "aria-label": info.name,
+    const date = datePicker({
       value: v.date,
-      oninput: (event) => {
-        v.date = event.target.value;
-        if (!v.date) {
-          v.time = "";
-          time.value = "";
-        }
-        time.disabled = !v.date;
+      label: info.name,
+      placeholder: t("field.date"),
+      onChange: (value) => {
+        v.date = value;
+        time.picker.setDisabled(!value);
       },
     });
     const clear = h(
@@ -742,9 +752,9 @@
         onclick: () => {
           v.date = "";
           v.time = "";
-          date.value = "";
-          time.value = "";
-          time.disabled = true;
+          date.picker.set("");
+          time.picker.set("");
+          time.picker.setDisabled(true);
         },
       },
       icon("close", 16)
@@ -772,14 +782,16 @@
 
       let detail;
       if (rec.mode === "interval") {
-        const unitOptions = ["day", "week", "month", "year"].map((unit) =>
-          h("option", { value: unit, text: tn(`repeat.unit.${unit}`, rec.every), selected: unit === rec.unit })
-        );
-        const unitSelect = h(
-          "select",
-          { class: "field", "aria-label": t("repeat.every"), onchange: (event) => (rec.unit = event.target.value) },
-          unitOptions
-        );
+        const unitHost = h("div", { class: "repeat-unit" });
+        const paintUnit = () =>
+          unitHost.replaceChildren(
+            dropdown({
+              value: rec.unit,
+              label: t("repeat.every"),
+              options: ["day", "week", "month", "year"].map((unit) => ({ value: unit, label: tn(`repeat.unit.${unit}`, rec.every) })),
+              onChange: (unit) => (rec.unit = unit),
+            })
+          );
         const amount = h("input", {
           class: "field narrow",
           type: "number",
@@ -790,21 +802,17 @@
           "aria-label": t("repeat.every"),
           oninput: (event) => {
             rec.every = Number(event.target.value) || 0;
-            unitOptions.forEach((option) => (option.textContent = tn(`repeat.unit.${option.value}`, rec.every)));
+            paintUnit(); // "día" / "días" según el número
           },
         });
-        detail = h("div", { class: "repeat-row" }, h("span", { class: "repeat-label", text: t("repeat.every") }), amount, unitSelect);
+        paintUnit();
+        detail = h("div", { class: "repeat-row" }, h("span", { class: "repeat-label", text: t("repeat.every") }), amount, unitHost);
       } else {
         detail = h(
           "div",
           { class: "weekdays", role: "group" },
           WEEK_ORDER.map((day) => {
-            const chip = h("button", {
-              type: "button",
-              class: "day-chip",
-              "aria-pressed": String(rec.days.includes(day)),
-              text: weekdayShort(day),
-            });
+            const chip = h("button", { type: "button", class: "day-chip", "aria-pressed": String(rec.days.includes(day)), text: weekdayName(day) });
             chip.addEventListener("click", () => {
               rec.days = rec.days.includes(day) ? rec.days.filter((d) => d !== day) : [...rec.days, day];
               chip.setAttribute("aria-pressed", String(rec.days.includes(day)));
@@ -821,11 +829,10 @@
   }
 
   function buildField(info) {
-    const missing = draft.showErrors && (info.id === "title" ? false : isMissing(info));
+    const missing = draft.showErrors && info.id !== "title" && isMissing(info);
     const group = h("div", { class: `field-group${missing ? " invalid" : ""}`, dataset: { param: info.id } });
     const inputId = `task-field-${info.id}`;
-    const required = info.required || info.id === "title" ? h("span", { class: "req", "aria-hidden": "true", text: " *" }) : null;
-    const label = (tag = "label") => h(tag, { class: "field-label", for: tag === "label" ? inputId : null }, info.name, required);
+    const label = (tag = "label") => h(tag, { class: "field-label", for: tag === "label" ? inputId : null, text: info.name });
     const value = draft.values[info.id];
     const store = (v) => (draft.values[info.id] = v);
 
@@ -845,15 +852,10 @@
       }
       group.append(label(), h("input", props));
     } else if (info.type === "select") {
-      const options = [h("option", { value: "", text: t("field.none") })];
-      for (const option of info.options || []) {
-        options.push(h("option", { value: option, text: optionLabel(info, option), selected: value === option }));
-      }
-      group.append(label(), h("select", { class: "field", id: inputId, onchange: (e) => store(e.target.value) }, options));
+      const options = [{ value: "", label: t("field.none") }, ...(info.options || []).map((o) => ({ value: o, label: optionLabel(info, o) }))];
+      group.append(label("div"), dropdown({ value: value || "", options, label: info.name, onChange: store }));
     } else if (info.type === "checkbox") {
-      group.append(
-        h("label", { class: "check-row" }, h("input", { type: "checkbox", checked: Boolean(value), onchange: (e) => store(e.target.checked) }), info.name, required)
-      );
+      group.append(h("label", { class: "check-row" }, h("input", { type: "checkbox", checked: Boolean(value), onchange: (e) => store(e.target.checked) }), info.name));
     } else if (info.type === "date") {
       group.append(label("div"), dateControl(info));
     } else if (info.type === "recurrence") {
@@ -864,38 +866,46 @@
 
   function renderTaskFields() {
     $("task-fields").replaceChildren(...paramsFor(draft.kind).map(buildField));
-    $("task-error").textContent = draft.showErrors && missingParams().length ? t("task.error.required") : "";
+    const missing = draft.showErrors ? missingParams() : [];
+    $("task-error").textContent = missing.length ? t("task.error.missing", { names: missing.map((p) => p.name).join(", ") }) : "";
   }
 
   function renderTaskDialog() {
+    if (!recurringAvailable()) draft.kind = "once";
     $("task-kind").replaceChildren(
-      segmented({
-        label: t("task.kind.label"),
-        options: [
-          { value: "once", label: t("kind.once") },
-          { value: "recurring", label: t("kind.recurring") },
-        ],
-        value: draft.kind,
-        onChange: (kind) => {
-          draft.kind = kind;
-          if (kind === "recurring" && !draft.values.date) draft.values.date = { date: todayString(), time: "" };
-          renderTaskFields();
-        },
-      })
+      ...(recurringAvailable()
+        ? [
+            segmented({
+              label: t("task.kind.label"),
+              options: [
+                { value: "once", label: t("kind.once") },
+                { value: "recurring", label: t("kind.recurring") },
+              ],
+              value: draft.kind,
+              onChange: (kind) => {
+                draft.kind = kind;
+                if (kind === "recurring" && !draft.values.date) draft.values.date = { date: todayString(), time: "" };
+                renderTaskFields();
+              },
+            }),
+          ]
+        : [])
     );
     renderTaskFields();
   }
 
-  function openTaskDialog(title = "") {
+  function openTaskDialog(list) {
+    const title = cleanTitle(inputs.get(list.id) ? inputs.get(list.id).value : "");
     draft = {
+      listId: list.id,
       kind: "once",
       values: { title },
       recurrence: { mode: "interval", every: 1, unit: "week", days: [] },
       showErrors: false,
     };
+    $("task-dialog-list").textContent = listName(list);
     renderTaskDialog();
     Flucti.openDialog($("task-dialog"));
-    if (!title) setTimeout(() => $("task-fields").querySelector("input")?.focus(), 0);
   }
 
   function taskFromDraft() {
@@ -912,9 +922,9 @@
 
     const task = {
       id: uid(),
-      listId: state.currentListId,
+      listId: draft.listId,
       kind,
-      title: draft.values.title.trim().replace(/\s+/g, " "),
+      title: cleanTitle(draft.values.title),
       values,
       createdAt: Date.now(),
     };
@@ -948,10 +958,12 @@
       $("task-dialog").close();
       return;
     }
+    const listId = draft.listId;
     if (!(draft.values.title || "").trim()) {
       // sin título la tarea se descarta automáticamente
       closeTaskDialog();
-      $("task-input").value = "";
+      titleDrafts.delete(listId);
+      renderGrid();
       return;
     }
     if (missingParams().length) {
@@ -963,49 +975,31 @@
     state.tasks.push(task);
     saveState();
     closeTaskDialog();
-    $("task-input").value = "";
-    renderAll(task.id);
-  }
-
-  // "Guardar" del campo de la pantalla: si no hay parámetros obligatorios se guarda al momento.
-  function quickSave() {
-    const input = $("task-input");
-    const title = input.value.trim().replace(/\s+/g, " ");
-    if (!title) {
-      input.focus();
-      return;
-    }
-    if (paramsFor("once").some((p) => p.id !== "title" && p.required)) {
-      openTaskDialog(title); // faltan datos obligatorios: se piden en la ventana
-      return;
-    }
-    const task = { id: uid(), listId: state.currentListId, kind: "once", title, values: {}, createdAt: Date.now() };
-    state.tasks.push(task);
-    saveState();
-    input.value = "";
-    input.focus();
-    renderAll(task.id);
+    titleDrafts.delete(listId);
+    cardErrors.delete(listId);
+    renderGrid(task.id);
   }
 
   /* ------------------------------------------------------------------------
-     Ajustes: parámetros de las tareas y listas
+     Ajustes: un menú con dos apartados (parámetros de las tareas y listas)
      ------------------------------------------------------------------------ */
+  let settingsView = null; // null (menú), "params" o "lists"
   let paramForm = null; // formulario de "Añadir parámetro" (null = cerrado)
   const newParamForm = () => ({ name: "", type: "text", options: "", once: true, recurring: true, required: false, error: false });
 
   function afterParamsChange() {
     saveState();
-    renderTasks();
+    renderGrid();
     if ($("task-dialog").open && draft) renderTaskFields();
   }
 
   function paramCheck(p, info, field, label) {
-    const fixed = info.locked || (field !== "required" && !info.kinds.includes(field));
     if (field !== "required" && !info.kinds.includes(field)) return h("span", { class: "param-na", "aria-hidden": "true", text: "–" });
+    const fixed = field === "required" ? info.fixedRequired : info.locked;
     return h("input", {
       type: "checkbox",
       class: "param-check",
-      checked: info.locked ? true : p[field],
+      checked: fixed ? true : p[field],
       disabled: fixed,
       "aria-label": `${info.name}: ${label}`,
       onchange: (event) => {
@@ -1017,14 +1011,14 @@
 
   function paramRow(p) {
     const info = paramInfo(p);
-    const cells = [
+    return h(
+      "div",
+      { class: "param-row" },
       h("div", { class: "param-name" }, h("span", { text: info.name }), h("small", { text: t(`type.${info.type}`) })),
       h("div", { class: "param-cell" }, paramCheck(p, info, "once", t("kind.once"))),
       h("div", { class: "param-cell" }, paramCheck(p, info, "recurring", t("kind.recurring"))),
       h("div", { class: "param-cell" }, paramCheck(p, info, "required", t("param.required"))),
-    ];
-    cells.push(
-      info.builtin
+      info.locked
         ? h("span")
         : h(
             "button",
@@ -1033,8 +1027,7 @@
               type: "button",
               "aria-label": `${t("param.remove")}: ${info.name}`,
               onclick: () => {
-                state.params = state.params.filter((x) => x.id !== p.id);
-                for (const list of state.lists) list.sort = list.sort.filter((r) => r.by !== p.id);
+                state.params = state.params.filter((x) => x.id !== p.id); // los datos de las tareas se conservan
                 afterParamsChange();
                 renderSettings();
               },
@@ -1042,7 +1035,19 @@
             icon("trash", 16)
           )
     );
-    return h("div", { class: "param-row" }, ...cells);
+  }
+
+  // Vuelve a poner un parámetro predefinido que se quitó, en su sitio.
+  function restoreParam(id) {
+    const def = DEFAULT_PARAMS.find((p) => p.id === id);
+    if (!def || hasParam(id)) return;
+    const order = DEFAULT_PARAMS.map((p) => p.id);
+    const later = order.slice(order.indexOf(id) + 1);
+    const at = state.params.findIndex((p) => later.includes(p.id));
+    if (at === -1) state.params.push({ ...def });
+    else state.params.splice(at, 0, { ...def });
+    afterParamsChange();
+    renderSettings();
   }
 
   function paramFormElement() {
@@ -1057,18 +1062,15 @@
       hidden: f.type !== "select",
       oninput: (event) => (f.options = event.target.value),
     });
-    const typeSelect = h(
-      "select",
-      {
-        class: "field",
-        "aria-label": t("param.type"),
-        onchange: (event) => {
-          f.type = event.target.value;
-          options.hidden = f.type !== "select";
-        },
+    const typeSelect = dropdown({
+      value: f.type,
+      label: t("param.type"),
+      options: TYPES.map((type) => ({ value: type, label: t(`type.${type}`) })),
+      onChange: (type) => {
+        f.type = type;
+        options.hidden = type !== "select";
       },
-      TYPES.map((type) => h("option", { value: type, text: t(`type.${type}`), selected: type === f.type }))
-    );
+    });
     const check = (field, text) =>
       h("label", { class: "check-row" }, h("input", { type: "checkbox", checked: f[field], onchange: (event) => (f[field] = event.target.checked) }), text);
 
@@ -1134,12 +1136,24 @@
     );
     for (const p of state.params) grid.append(paramRow(p));
 
+    const removed = DEFAULT_PARAMS.filter((d) => !hasParam(d.id));
     return h(
       "section",
       { class: "settings-section" },
-      h("h3", { class: "settings-heading", text: t("settings.params") }),
       h("p", { class: "settings-hint", text: t("settings.params.hint") }),
       grid,
+      removed.length
+        ? h(
+            "div",
+            { class: "removed" },
+            h("p", { class: "settings-hint", text: t("settings.params.restore") }),
+            h(
+              "div",
+              { class: "chip-row" },
+              removed.map((d) => h("button", { class: "chip", type: "button", onclick: () => restoreParam(d.id) }, icon("plus", 14), t(`param.${d.id}`)))
+            )
+          )
+        : null,
       paramForm
         ? paramFormElement()
         : h("button", {
@@ -1160,45 +1174,72 @@
     if (!list.hidden && visibleLists().length === 1) return; // siempre queda una lista a la vista
     list.hidden = !list.hidden;
     saveState();
-    renderAll();
+    renderGrid();
     renderSettings();
   }
 
   function listsSection() {
-    const rows = state.lists.map((list) => {
-      const onlyVisible = !list.hidden && visibleLists().length === 1;
-      return h(
-        "div",
-        { class: `list-row${list.hidden ? " is-hidden" : ""}` },
+    return h(
+      "section",
+      { class: "settings-section" },
+      state.lists.map((list) => {
+        const onlyVisible = !list.hidden && visibleLists().length === 1;
+        return h(
+          "div",
+          { class: `list-row${list.hidden ? " is-hidden" : ""}` },
+          h(
+            "button",
+            {
+              class: "icon-btn",
+              type: "button",
+              "aria-label": `${listName(list)}: ${t(list.hidden ? "list.show" : "list.hide")}`,
+              disabled: onlyVisible,
+              onclick: () => toggleListHidden(list.id),
+            },
+            icon(list.hidden ? "eyeOff" : "eye")
+          ),
+          h(
+            "button",
+            { class: "list-open", type: "button", "aria-label": `${t("list.edit")}: ${listName(list)}`, onclick: () => openListDialog(list.id) },
+            h("span", { class: "list-open-name", text: listName(list) }),
+            list.hidden ? h("small", { text: t("list.hidden") }) : null,
+            icon("chevron", 16)
+          )
+        );
+      })
+    );
+  }
+
+  function settingsMenu() {
+    return h(
+      "div",
+      { class: "settings-menu" },
+      ["params", "lists"].map((view) =>
         h(
           "button",
           {
-            class: "icon-btn",
+            class: "menu-row",
             type: "button",
-            "aria-label": `${listName(list)}: ${t(list.hidden ? "list.show" : "list.hide")}`,
-            disabled: onlyVisible,
-            onclick: () => toggleListHidden(list.id),
+            onclick: () => {
+              settingsView = view;
+              renderSettings();
+            },
           },
-          icon(list.hidden ? "eyeOff" : "eye")
-        ),
-        h(
-          "button",
-          { class: "list-open", type: "button", "aria-label": `${t("list.edit")}: ${listName(list)}`, onclick: () => openListDialog(list.id) },
-          h("span", { class: "list-open-name", text: listName(list) }),
-          list.hidden ? h("small", { text: t("list.hidden") }) : null,
-          icon("chevron", 16)
+          h("span", { text: t(view === "params" ? "settings.params" : "settings.lists") }),
+          icon("chevron", 18)
         )
-      );
-    });
-    return h("section", { class: "settings-section" }, h("h3", { class: "settings-heading", text: t("settings.lists") }), ...rows);
+      )
+    );
   }
 
   function renderSettings() {
-    $("settings-body").replaceChildren(paramsSection(), listsSection());
+    $("settings-back").hidden = settingsView === null;
+    $("settings-title").textContent = settingsView === "params" ? t("settings.params") : settingsView === "lists" ? t("settings.lists") : t("menu.title");
+    $("settings-body").replaceChildren(settingsView === "params" ? paramsSection() : settingsView === "lists" ? listsSection() : settingsMenu());
   }
 
   /* ------------------------------------------------------------------------
-     Ventana de una lista: nombre, orden, ocultar y eliminar
+     Ventana de una lista: nombre, orden, tareas completadas, ocultar y eliminar
      ------------------------------------------------------------------------ */
   let editingListId = null;
   let deleteArmed = false;
@@ -1212,41 +1253,37 @@
 
   const defaultDirection = (kind) => (kind === "level" || kind === "created" ? "desc" : "asc");
 
-  function sortRow(list, rule, index, criteria) {
-    const kind = (criteria.find((c) => c.id === rule.by) || { kind: "text" }).kind;
+  // Una fila de criterio de orden. "rules" son los criterios disponibles de la lista, "index" su posición.
+  function sortRow(list, rules, index, criteria) {
+    const rule = rules[index];
+    const kindOf = (id) => (criteria.find((c) => c.id === id) || { kind: "text" }).kind;
     const changed = () => {
       saveState();
-      renderTasks();
+      renderGrid();
       renderListDialog();
     };
     return h(
       "div",
       { class: "sort-row" },
-      h(
-        "select",
-        {
-          class: "field",
-          "aria-label": t("list.sort"),
-          onchange: (event) => {
-            rule.by = event.target.value;
-            rule.dir = defaultDirection((criteria.find((c) => c.id === rule.by) || { kind: "text" }).kind);
-            changed();
-          },
+      dropdown({
+        value: rule.by,
+        label: t("list.sort"),
+        options: criteria.map((c) => ({ value: c.id, label: c.label })),
+        onChange: (by) => {
+          rule.by = by;
+          rule.dir = defaultDirection(kindOf(by));
+          changed();
         },
-        criteria.map((c) => h("option", { value: c.id, text: c.label, selected: c.id === rule.by }))
-      ),
-      h(
-        "select",
-        {
-          class: "field",
-          "aria-label": t("list.sort"),
-          onchange: (event) => {
-            rule.dir = event.target.value;
-            changed();
-          },
+      }),
+      dropdown({
+        value: rule.dir,
+        label: t("list.sort"),
+        options: ["asc", "desc"].map((dir) => ({ value: dir, label: t(`dir.${kindOf(rule.by)}.${dir}`) })),
+        onChange: (dir) => {
+          rule.dir = dir;
+          changed();
         },
-        ["asc", "desc"].map((dir) => h("option", { value: dir, text: t(`dir.${kind}.${dir}`), selected: dir === rule.dir }))
-      ),
+      }),
       index > 0
         ? h(
             "button",
@@ -1255,7 +1292,9 @@
               type: "button",
               "aria-label": t("sort.up"),
               onclick: () => {
-                [list.sort[index - 1], list.sort[index]] = [list.sort[index], list.sort[index - 1]];
+                const a = list.sort.indexOf(rules[index - 1]);
+                const b = list.sort.indexOf(rule);
+                [list.sort[a], list.sort[b]] = [list.sort[b], list.sort[a]];
                 changed();
               },
             },
@@ -1269,7 +1308,7 @@
           type: "button",
           "aria-label": t("sort.remove"),
           onclick: () => {
-            list.sort.splice(index, 1);
+            list.sort.splice(list.sort.indexOf(rule), 1);
             changed();
           },
         },
@@ -1281,10 +1320,11 @@
   function deleteList(id) {
     state.lists = state.lists.filter((l) => l.id !== id);
     state.tasks = state.tasks.filter((x) => x.listId !== id);
-    ensureCurrentList();
+    titleDrafts.delete(id);
+    if (!visibleLists().length) state.lists[0].hidden = false;
     saveState();
     $("list-dialog").close();
-    renderAll();
+    renderGrid();
     if ($("settings-dialog").open) renderSettings();
   }
 
@@ -1292,8 +1332,9 @@
     const list = state.lists.find((l) => l.id === editingListId);
     if (!list) return;
     const criteria = sortCriteria();
-    list.sort = list.sort.filter((r) => criteria.some((c) => c.id === r.by)); // por si se borró un parámetro
-    const unused = criteria.find((c) => !list.sort.some((r) => r.by === c.id));
+    // los criterios de parámetros que ya no existen se saltan (se conservan por si el parámetro vuelve)
+    const rules = list.sort.filter((r) => criteria.some((c) => c.id === r.by));
+    const unused = criteria.find((c) => !rules.some((r) => r.by === c.id));
     const onlyVisible = !list.hidden && visibleLists().length === 1;
 
     const nameInput = h("input", {
@@ -1311,7 +1352,7 @@
         }
         list.name = name;
         saveState();
-        renderAll();
+        renderGrid();
       },
       onkeydown: (event) => {
         if (event.key === "Enter") event.target.blur();
@@ -1325,7 +1366,7 @@
         { class: "settings-section" },
         h("h3", { class: "settings-heading", text: t("list.sort") }),
         h("p", { class: "settings-hint", text: t("list.sort.hint") }),
-        ...list.sort.map((rule, i) => sortRow(list, rule, i, criteria)),
+        ...rules.map((_, i) => sortRow(list, rules, i, criteria)),
         unused
           ? h("button", {
               class: "text-btn",
@@ -1334,25 +1375,43 @@
               onclick: () => {
                 list.sort.push({ by: unused.id, dir: defaultDirection(unused.kind) });
                 saveState();
-                renderTasks();
+                renderGrid();
                 renderListDialog();
               },
             })
           : null
       ),
       h(
-        "label",
-        { class: "check-row" },
-        h("input", {
-          type: "checkbox",
-          checked: list.hidden,
-          disabled: onlyVisible,
-          onchange: () => {
-            toggleListHidden(list.id);
-            renderListDialog();
-          },
-        }),
-        t("list.hide")
+        "div",
+        { class: "check-group stacked" },
+        h(
+          "label",
+          { class: "check-row" },
+          h("input", {
+            type: "checkbox",
+            checked: list.showCompleted,
+            onchange: (event) => {
+              list.showCompleted = event.target.checked;
+              saveState();
+              renderGrid();
+            },
+          }),
+          t("list.showCompleted")
+        ),
+        h(
+          "label",
+          { class: "check-row" },
+          h("input", {
+            type: "checkbox",
+            checked: list.hidden,
+            disabled: onlyVisible,
+            onchange: () => {
+              toggleListHidden(list.id);
+              renderListDialog();
+            },
+          }),
+          t("list.hide")
+        )
       ),
       h("button", {
         class: "text-btn danger",
@@ -1389,13 +1448,20 @@
   Flucti.bindDialog(taskDialog, attemptCloseTask);
 
   $("menu-btn").addEventListener("click", () => {
+    settingsView = null;
+    paramForm = null;
     renderSettings();
     Flucti.openDialog(settingsDialog);
+  });
+  $("settings-back").addEventListener("click", () => {
+    settingsView = null;
+    paramForm = null;
+    renderSettings();
   });
   $("settings-close").addEventListener("click", () => settingsDialog.close());
   $("list-close").addEventListener("click", () => listDialog.close());
   listDialog.addEventListener("close", () => {
-    renderAll();
+    renderGrid();
     if (settingsDialog.open) renderSettings();
   });
 
@@ -1407,29 +1473,26 @@
   });
   taskDialog.addEventListener("close", () => (draft = null)); // cierre forzado por el navegador: se descarta
 
-  $("add-form").addEventListener("submit", (event) => {
-    event.preventDefault();
-    quickSave();
-  });
-  $("params-btn").addEventListener("click", () => openTaskDialog($("task-input").value.trim()));
-  $("list-options-btn").addEventListener("click", () => openListDialog(state.currentListId));
-
   // Al cambiar de idioma se vuelve a dibujar lo que genera este archivo.
   I18n.onChange(() => {
-    renderAll();
+    renderGrid();
     if (settingsDialog.open) renderSettings();
     if (listDialog.open) renderListDialog();
     if (taskDialog.open && draft) renderTaskDialog();
   });
 
-  // Las fechas relativas ("Mañana") cambian con el día: se refrescan cada minuto y al volver a la pestaña.
-  setInterval(() => renderTasks(), 60 * 1000);
+  // Las fechas relativas ("Mañana") cambian con el día: se refrescan cada minuto y al volver a la pestaña,
+  // sin interrumpir si se está escribiendo o hay una ventana abierta.
+  const refresh = () => {
+    if (!focusedKey && !Flucti.isDialogOpen()) renderGrid();
+  };
+  setInterval(refresh, 60 * 1000);
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) renderTasks();
+    if (!document.hidden) refresh();
   });
 
   saveState();
-  renderAll();
+  renderGrid();
 
   // Para pruebas desde la consola: Flucti.tasks.state(), Flucti.tasks.sortTasks(...)
   Flucti.tasks = {
@@ -1440,6 +1503,6 @@
     dateLabel,
     normalizeState,
     repeatSummary,
-    renderAll,
+    renderGrid,
   };
 })();

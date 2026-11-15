@@ -1,19 +1,20 @@
 # Flucti
 
-Gestor de tareas minimalista, limpio y ordenado. La pantalla de inicio muestra la hora con segundos, un saludo, la fecha y tus listas, y el fondo cambia con el cielo real del lugar donde estás: la hora, la época del año y el tiempo atmosférico. Al deslizar hacia abajo aparece la lista de tareas.
+Gestor de tareas minimalista, limpio y ordenado. La pantalla de inicio muestra la hora con segundos, un saludo y la fecha, y el fondo cambia con el cielo real del lugar donde estás: la hora, la época del año y el tiempo atmosférico. Al deslizar hacia abajo aparecen tus listas de tareas.
 
 Funciona **solo en tu navegador**: no hay servidor ni cuentas, y las tareas se guardan en este dispositivo.
 
 ## Qué hace
 
 - **Cielo dinámico.** El color de fondo sigue la posición real del sol (hora azul, hora dorada, día y noche) según tu ubicación, y cambia con el tiempo: sol, nubes, lluvia, nieve, tormenta con rayos y niebla.
-- **Listas.** Se crean y se eligen en la pantalla de inicio. Por defecto hay una llamada "Actual". Se pueden ocultar, renombrar y eliminar, y cada una tiene su propio orden.
-- **Tareas.** Escribe el título y pulsa **+** para guardarla, o abre sus **parámetros** (botón de al lado) para completar más datos.
+- **Listas.** Cada lista es un recuadro con sus tareas dentro: dos por fila en pantallas grandes y una por fila en las pequeñas. Por defecto hay una llamada "Actual"; se crean con el recuadro de "Nueva lista". Se pueden ocultar, renombrar y eliminar, y cada una tiene su propio orden y decide si muestra las tareas completadas.
+- **Tareas.** Escribe el título en el recuadro de la lista y pulsa **+** para guardarla, o abre sus **parámetros** (botón de al lado) para completar más datos. Si falta un parámetro obligatorio no se guarda y se avisa de cuál es.
   - *Únicas*: descripción, fecha de vencimiento (hora opcional), fecha de planificación (opcional) y energía (alta, media o baja).
   - *Recurrentes*: lo mismo, más cada cuánto se repite (cada N días, semanas, meses o años) o en qué días de la semana. Al completarlas pasan a su siguiente fecha.
   - Las que vencen **mañana** se resaltan.
+  - Al completar una tarea se **marca, no se borra**: se puede mostrar u ocultar desde las opciones de la lista y recuperar desmarcándola.
 - **Orden por lista.** Por defecto: primero las que vencen antes y, a igual fecha, las que más energía suponen. Se puede cambiar en las opciones de cada lista.
-- **Parámetros configurables.** En Ajustes se elige qué parámetros lleva cada tipo de tarea, cuáles son obligatorios y se pueden añadir los propios (texto, texto largo, número, fecha, lista desplegable o sí/no). El título siempre está.
+- **Ajustes.** Dos apartados: *Parámetros de las tareas* y *Listas*. En los parámetros se elige en qué tipos de tarea aparece cada uno y si es obligatorio, se pueden añadir los propios (texto, texto largo, número, fecha, lista desplegable o sí/no) y se puede quitar cualquiera excepto el título. Los datos que ya tenían las tareas no se pierden al quitar un parámetro: se pueden restaurar.
 - **Cuatro idiomas:** español, catalán, inglés y alemán. Todos los textos están en `languages.js` y se pueden editar a mano.
 
 ## Archivos
@@ -24,6 +25,7 @@ Funciona **solo en tu navegador**: no hay servidor ni cuentas, y las tareas se g
 | `style.css` | Estilos y paletas del cielo |
 | `script.js` | Reloj, cielo, tiempo atmosférico y desplazamiento entre pantallas |
 | `tasks.js` | Tareas, listas, parámetros, orden y recurrencias |
+| `ui.js` | Componentes propios: desplegables, calendario, selector de hora y deslizador |
 | `i18n.js` | Lógica de idiomas y utilidades comunes |
 | `languages.js` | Idiomas y traducciones (el único archivo que hay que tocar para cambiar textos) |
 
@@ -36,6 +38,8 @@ Si abres `index.html` directamente como archivo, el navegador puede bloquear la 
 ## Tus datos
 
 Todo se guarda en `localStorage`, en este navegador y dispositivo. Si borras los datos del sitio, se pierden las tareas, y no se sincronizan entre dispositivos.
+
+**Las actualizaciones no borran tareas.** Cuando cambia el formato de los datos, la app guarda antes una copia exacta de lo que había (`flucti:data:v1:backup-v1`, `…:corrupt` si los datos no se podían leer) y migra sin descartar ninguna tarea.
 
 ## Probar el cielo desde la consola
 

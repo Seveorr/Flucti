@@ -23,8 +23,6 @@
         </time>
         <p class="date" id="date"></p>
 
-        <!-- Listas de tareas: elegir una, o crear otra con + -->
-        <nav class="lists" id="home-lists" aria-label="Listas" data-i18n-aria-label="lists.label"></nav>
       </div>
 
       <a class="scroll-hint" href="#tasks" aria-label="Ver tareas" data-i18n-aria-label="scroll.label">
@@ -36,7 +34,7 @@
     </section>
 
     <!-- Pantalla 2: lista de tareas (hoja) -->
-    <section class="screen tasks" id="tasks" aria-labelledby="tasks-title">
+    <section class="screen tasks" id="tasks" aria-label="Tareas" data-i18n-aria-label="tasks.section">
       <!-- Botones de la franja superior, a la altura de la flecha -->
       <div class="topbar">
         <button class="icon-btn" id="menu-btn" type="button" aria-haspopup="dialog"
@@ -52,40 +50,8 @@
       </div>
 
       <div class="tasks-inner">
-        <div class="tasks-head">
-          <h2 class="tasks-title" id="tasks-title"></h2>
-          <button class="icon-btn" id="list-options-btn" type="button" aria-haspopup="dialog"
-                  aria-label="Opciones de la lista" data-i18n-aria-label="list.options">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-              <circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>
-            </svg>
-          </button>
-        </div>
-
-        <!-- Título + guardar + parámetros (los dos botones son cuadrados y del mismo tamaño) -->
-        <form class="add" id="add-form" autocomplete="off">
-          <label class="visually-hidden" for="task-input" data-i18n="task.input.label">Nombre de la tarea</label>
-          <input class="add-input" id="task-input" type="text" maxlength="120"
-                 placeholder="Nombre de la tarea" data-i18n-placeholder="task.input.placeholder">
-          <button class="square-btn primary" type="submit" aria-label="Guardar tarea" data-i18n-aria-label="task.save">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-              <path d="M12 5v14M5 12h14"/>
-            </svg>
-          </button>
-          <button class="square-btn" id="params-btn" type="button" aria-haspopup="dialog"
-                  aria-label="Parámetros de la tarea" data-i18n-aria-label="task.params">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-              <path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>
-            </svg>
-          </button>
-        </form>
-
-        <ul class="list" id="task-list"></ul>
-
-        <p class="empty" id="empty" hidden data-i18n="task.empty">No hay tareas pendientes en esta lista. Escribe una arriba y pulsa +.</p>
+        <!-- Una tarjeta por lista, con sus tareas dentro (se dibujan desde tasks.js) -->
+        <div class="lists-grid" id="lists-grid"></div>
       </div>
     </section>
 
@@ -95,7 +61,11 @@
   <dialog class="modal modal-wide" id="settings-dialog" aria-labelledby="settings-title">
     <div class="modal-body">
       <header class="modal-head">
-        <h2 class="modal-title" id="settings-title" data-i18n="menu.title">Ajustes</h2>
+        <button class="icon-btn" id="settings-back" type="button" hidden aria-label="Volver" data-i18n-aria-label="settings.back">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+        </button>
+        <h2 class="modal-title" id="settings-title">Ajustes</h2>
         <button class="icon-btn" id="settings-close" type="button" aria-label="Cerrar" data-i18n-aria-label="dialog.close">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -115,6 +85,7 @@
                stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </header>
+      <p class="modal-sub" id="task-dialog-list"></p>
       <div id="task-kind"></div>
       <div class="task-fields" id="task-fields"></div>
       <p class="form-error" id="task-error" role="alert"></p>
@@ -138,6 +109,7 @@
 
   <script src="languages.js"></script>
   <script src="i18n.js"></script>
+  <script src="ui.js"></script>
   <script src="tasks.js"></script>
   <script src="script.js"></script>
 </body>

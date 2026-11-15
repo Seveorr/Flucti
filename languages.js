@@ -43,16 +43,16 @@ const TRANSLATIONS = {
 
   /* Listas (en la pantalla de inicio y en la hoja de tareas) */
   "list.default": { es: "Actual", ca: "Actual", en: "Current", de: "Aktuell" },
-  "lists.label": { es: "Listas", ca: "Llistes", en: "Lists", de: "Listen" },
   "list.add": { es: "Crear lista", ca: "Crea una llista", en: "Create list", de: "Liste erstellen" },
   "list.new.placeholder": { es: "Nueva lista", ca: "Nova llista", en: "New list", de: "Neue Liste" },
   "list.options": { es: "Opciones de la lista", ca: "Opcions de la llista", en: "List options", de: "Listenoptionen" },
 
   /* Barra superior y ajustes */
-  "menu.open": { es: "Abrir ajustes", ca: "Obre els ajustos", en: "Open settings", de: "Einstellungen öffnen" },
-  "menu.title": { es: "Ajustes", ca: "Ajustos", en: "Settings", de: "Einstellungen" },
+  "menu.open": { es: "Abrir ajustes", ca: "Obrir la configuració", en: "Open settings", de: "Einstellungen öffnen" },
+  "menu.title": { es: "Ajustes", ca: "Configuració", en: "Settings", de: "Einstellungen" },
 
   /* Hoja de tareas */
+  "tasks.section": { es: "Tareas", ca: "Tasques", en: "Tasks", de: "Aufgaben" },
   "task.input.label": { es: "Nombre de la tarea", ca: "Nom de la tasca", en: "Task name", de: "Name der Aufgabe" },
   "task.input.placeholder": { es: "Nombre de la tarea", ca: "Nom de la tasca", en: "Task name", de: "Name der Aufgabe" },
   "task.save": { es: "Guardar tarea", ca: "Desa la tasca", en: "Save task", de: "Aufgabe speichern" },
@@ -81,12 +81,15 @@ const TRANSLATIONS = {
   "kind.once": { es: "Única", ca: "Única", en: "One-time", de: "Einmalig" },
   "kind.recurring": { es: "Recurrente", ca: "Recurrent", en: "Recurring", de: "Wiederkehrend" },
   "task.saveButton": { es: "Guardar", ca: "Desa", en: "Save", de: "Speichern" },
-  "task.error.required": {
-    es: "Completa los campos obligatorios (*).",
-    ca: "Completa els camps obligatoris (*).",
-    en: "Fill in the required fields (*).",
-    de: "Fülle die Pflichtfelder (*) aus.",
+  "task.error.missing": {
+    es: "Falta rellenar: {names}",
+    ca: "Falta omplir: {names}",
+    en: "Missing: {names}",
+    de: "Bitte ausfüllen: {names}",
   },
+  "task.completed.title": { es: "Completadas", ca: "Completades", en: "Completed", de: "Erledigt" },
+  "cal.prev": { es: "Mes anterior", ca: "Mes anterior", en: "Previous month", de: "Vorheriger Monat" },
+  "cal.next": { es: "Mes siguiente", ca: "Mes següent", en: "Next month", de: "Nächster Monat" },
   "field.clear": { es: "Quitar", ca: "Treu", en: "Clear", de: "Entfernen" },
   "field.date": { es: "Fecha", ca: "Data", en: "Date", de: "Datum" },
   "field.time": { es: "Hora (opcional)", ca: "Hora (opcional)", en: "Time (optional)", de: "Uhrzeit (optional)" },
@@ -156,10 +159,17 @@ const TRANSLATIONS = {
     de: "Aufgabenparameter",
   },
   "settings.params.hint": {
-    es: "Elige qué datos tiene una tarea. El título siempre está.",
-    ca: "Tria quines dades té una tasca. El títol sempre hi és.",
-    en: "Choose what data a task has. The title is always there.",
-    de: "Lege fest, welche Angaben eine Aufgabe hat. Der Titel ist immer dabei.",
+    es: "Elige qué datos tiene una tarea. El título es fijo.",
+    ca: "Tria quines dades té una tasca. El títol és fixe.",
+    en: "Choose what data a task has. The title is fixed.",
+    de: "Lege fest, welche Angaben eine Aufgabe hat. Der Titel ist fix.",
+  },
+  "settings.back": { es: "Volver", ca: "Tornar", en: "Back", de: "Zurück" },
+  "settings.params.restore": {
+    es: "Parámetros eliminados",
+    ca: "Paràmetres eliminats",
+    en: "Removed parameters",
+    de: "Entfernte Parameter",
   },
   "col.once": { es: "Única", ca: "Única", en: "Once", de: "Einmal" },
   "col.recurring": { es: "Recurr.", ca: "Recurr.", en: "Repeat", de: "Wiederh." },
@@ -188,6 +198,12 @@ const TRANSLATIONS = {
   "settings.lists": { es: "Listas", ca: "Llistes", en: "Lists", de: "Listen" },
   "list.show": { es: "Mostrar en inicio", ca: "Mostra a l'inici", en: "Show on home", de: "Auf dem Start zeigen" },
   "list.hide": { es: "Ocultar en inicio", ca: "Amaga a l'inici", en: "Hide on home", de: "Auf dem Start ausblenden" },
+  "list.showCompleted": {
+    es: "Mostrar tareas completadas",
+    ca: "Mostra les tasques completades",
+    en: "Show completed tasks",
+    de: "Erledigte Aufgaben anzeigen",
+  },
   "list.edit": { es: "Editar lista", ca: "Edita la llista", en: "Edit list", de: "Liste bearbeiten" },
   "list.hidden": { es: "Oculta", ca: "Amagada", en: "Hidden", de: "Ausgeblendet" },
 

@@ -864,7 +864,7 @@
   });
 
   // --progress (0 en el inicio, 1 en las tareas) quita poco a poco el redondeo de la hoja;
-  // el título "Tareas" aparece al pasar de la mitad del recorrido.
+  // las listas de tareas aparecen al pasar de la mitad del recorrido.
   function updateOpen() {
     const top = tasksTop();
     const progress = top > 0 ? clamp(window.scrollY / top, 0, 1) : 1;
