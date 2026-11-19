@@ -472,7 +472,14 @@
     const body = h(
       "div",
       { class: "task-body" },
-      h("span", { class: "task-name", text: task.title }),
+      h("span", {
+        class: "task-name",
+        text: task.title,
+        onclick: (event) => {
+          event.stopPropagation();
+          openTaskDialogForEdit(task);
+        },
+      }),
       task.values.description ? h("span", { class: "task-desc", text: task.values.description }) : null,
       meta.length ? h("div", { class: "task-meta" }, meta) : null
     );
@@ -517,20 +524,11 @@
   const NEW_KEY = "__new__";
   const titleDrafts = new Map(); // texto escrito en el campo de cada lista (se conserva al redibujar)
   const inputs = new Map();
-  const errorEls = new Map();
-  const cardErrors = new Map();
   let focusedKey = null; // campo que tiene el cursor (id de lista o NEW_KEY)
   let rendering = false;
   let addingList = false;
   let newListDraft = "";
   let newListInput = null;
-
-  function setCardError(id, text) {
-    if (text) cardErrors.set(id, text);
-    else cardErrors.delete(id);
-    const el = errorEls.get(id);
-    if (el) el.textContent = text;
-  }
 
   function trackFocus(input, key) {
     input.addEventListener("focus", () => (focusedKey = key));
@@ -541,24 +539,25 @@
 
   const cleanTitle = (text) => text.trim().replace(/\s+/g, " ");
 
-  // "Guardar": con solo el título se guarda al momento; si falta un parámetro obligatorio no se guarda.
+  // "Guardar": con solo el título se guarda al momento. Si falta un parámetro obligatorio, la tarea no se
+  // pierde: se abre la ventana con el título escrito y se señala lo que falta para rellenarlo.
   function quickSave(list) {
     const input = inputs.get(list.id);
     const title = cleanTitle(input.value);
     if (!title) {
+      input.classList.add("invalid"); // sin título no se guarda: el campo se señala en rojo
       input.focus();
       return;
     }
     const missing = paramsFor("once").filter((p) => p.id !== "title" && p.required);
     if (missing.length) {
-      setCardError(list.id, t("task.error.missing", { names: missing.map((p) => p.name).join(", ") }));
+      openTaskDialog(list, true);
       return;
     }
     const task = { id: uid(), listId: list.id, kind: "once", title, values: {}, createdAt: Date.now() };
     state.tasks.push(task);
     saveState();
     titleDrafts.delete(list.id);
-    cardErrors.delete(list.id);
     focusedKey = list.id;
     renderGrid(task.id);
   }
@@ -573,7 +572,7 @@
       value: titleDrafts.get(list.id) || "",
       oninput: (event) => {
         titleDrafts.set(list.id, event.target.value);
-        setCardError(list.id, "");
+        event.target.classList.remove("invalid");
       },
     });
     trackFocus(input, list.id);
@@ -593,9 +592,6 @@
       ? state.tasks.filter((x) => x.listId === list.id && x.done).sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0))
       : [];
 
-    const error = h("p", { class: "card-error", role: "alert", text: cardErrors.get(list.id) || "" });
-    errorEls.set(list.id, error);
-
     return h(
       "section",
       { class: "list-card", dataset: { list: list.id }, "aria-label": listName(list) },
@@ -611,16 +607,15 @@
         )
       ),
       addRow(list),
-      error,
       h("ul", { class: "list" }, pending.map((x) => taskElement(x, x.id === enteringId))),
       h("p", { class: "card-empty", text: t("task.empty"), hidden: pending.length > 0 }),
       completed.length
         ? h(
-            "div",
-            { class: "completed" },
-            h("h3", { class: "completed-title", text: `${t("task.completed.title")} · ${completed.length}` }),
-            h("ul", { class: "list" }, completed.map((x) => taskElement(x, false)))
-          )
+          "div",
+          { class: "completed" },
+          h("h3", { class: "completed-title", text: `${t("task.completed.title")} · ${completed.length}` }),
+          h("ul", { class: "list" }, completed.map((x) => taskElement(x, false)))
+        )
         : null
     );
   }
@@ -690,11 +685,16 @@
     rendering = true;
     const restore = focusedKey;
     inputs.clear();
-    errorEls.clear();
     newListInput = null;
     const cards = visibleLists().map((list) => buildCard(list, enteringId));
-    cards.push(newListCard());
-    $("lists-grid").replaceChildren(...cards);
+    // Dos columnas: la primera mitad de las listas a la izquierda (de arriba abajo) y el resto a la derecha,
+    // sin huecos entre unas y otras. El recuadro de "Nueva lista" va al final de la columna derecha.
+    // En pantallas pequeñas las columnas se funden y queda una sola lista por fila, en el mismo orden.
+    const half = Math.ceil(cards.length / 2);
+    $("lists-grid").replaceChildren(
+      h("div", { class: "lists-col" }, cards.slice(0, half)),
+      h("div", { class: "lists-col" }, cards.slice(half), newListCard())
+    );
     rendering = false;
 
     const el = restore === NEW_KEY ? newListInput : restore ? inputs.get(restore) : null;
@@ -709,7 +709,7 @@
      Cerrarla guarda la tarea; sin título se descarta; si falta un campo obligatorio no se guarda
      y se avisa de cuál es.
      ------------------------------------------------------------------------ */
-  let draft = null; // { listId, kind, values, recurrence, showErrors }
+  let draft = null; // { listId, kind, values, recurrence, showErrors, editingTaskId }
 
   const isEmptyValue = (info, v) => {
     if (info.type === "date") return !(v && v.date);
@@ -724,6 +724,20 @@
   }
 
   const missingParams = () => paramsFor(draft.kind).filter((p) => p.id !== "title" && isMissing(p));
+  const titleEmpty = () => !(draft.values.title || "").trim();
+
+  // Sin título la tarea se descarta: se avisa en rojo mientras esté vacío. Si faltan parámetros obligatorios, se dice cuáles.
+  const titleGroup = () => $("task-fields").querySelector('[data-param="title"]');
+
+  function refreshTaskError() {
+    const group = titleGroup();
+    if (group) group.classList.toggle("invalid", draft.showErrors && titleEmpty());
+    const missing = draft.showErrors ? missingParams() : [];
+    let text = "";
+    if (draft.showErrors && titleEmpty()) text = t("task.error.title");
+    else if (missing.length) text = t("task.error.missing", { names: missing.map((p) => p.name).join(", ") });
+    $("task-error").textContent = text;
+  }
 
   function dateControl(info) {
     const v = draft.values[info.id] || (draft.values[info.id] = { date: "", time: "" });
@@ -839,14 +853,23 @@
     if (info.type === "textarea") {
       group.append(label(), h("textarea", { class: "field", id: inputId, rows: 3, maxlength: 1000, value: value || "", oninput: (e) => store(e.target.value) }));
     } else if (info.type === "text" || info.type === "number") {
-      const props = { class: "field", id: inputId, type: info.type === "number" ? "number" : "text", value: value ?? "", oninput: (e) => store(e.target.value) };
+      const props = {
+        class: "field",
+        id: inputId,
+        type: info.type === "number" ? "number" : "text",
+        value: value ?? "",
+        oninput: (e) => {
+          store(e.target.value);
+          if (info.id === "title") refreshTaskError();
+        },
+      };
       if (info.type === "number") Object.assign(props, { inputmode: "decimal", step: "any" });
       else props.maxlength = info.id === "title" ? 120 : 200;
       if (info.id === "title") {
         props.onkeydown = (event) => {
           if (event.key === "Enter") {
             event.preventDefault();
-            attemptCloseTask();
+            attemptCloseTask(true);
           }
         };
       }
@@ -866,8 +889,7 @@
 
   function renderTaskFields() {
     $("task-fields").replaceChildren(...paramsFor(draft.kind).map(buildField));
-    const missing = draft.showErrors ? missingParams() : [];
-    $("task-error").textContent = missing.length ? t("task.error.missing", { names: missing.map((p) => p.name).join(", ") }) : "";
+    refreshTaskError();
   }
 
   function renderTaskDialog() {
@@ -875,35 +897,64 @@
     $("task-kind").replaceChildren(
       ...(recurringAvailable()
         ? [
-            segmented({
-              label: t("task.kind.label"),
-              options: [
-                { value: "once", label: t("kind.once") },
-                { value: "recurring", label: t("kind.recurring") },
-              ],
-              value: draft.kind,
-              onChange: (kind) => {
-                draft.kind = kind;
-                if (kind === "recurring" && !draft.values.date) draft.values.date = { date: todayString(), time: "" };
-                renderTaskFields();
-              },
-            }),
-          ]
+          segmented({
+            label: t("task.kind.label"),
+            options: [
+              { value: "once", label: t("kind.once") },
+              { value: "recurring", label: t("kind.recurring") },
+            ],
+            value: draft.kind,
+            onChange: (kind) => {
+              draft.kind = kind;
+              if (kind === "recurring" && !draft.values.date) draft.values.date = { date: todayString(), time: "" };
+              renderTaskFields();
+            },
+          }),
+        ]
         : [])
     );
     renderTaskFields();
   }
 
-  function openTaskDialog(list) {
+  function openTaskDialog(list, showErrors = false) {
     const title = cleanTitle(inputs.get(list.id) ? inputs.get(list.id).value : "");
+    $("task-dialog-title").textContent = t("task.dialog.new");
     draft = {
       listId: list.id,
       kind: "once",
       values: { title },
       recurrence: { mode: "interval", every: 1, unit: "week", days: [] },
-      showErrors: false,
+      showErrors, // true: se abre ya señalando los parámetros obligatorios que faltan
     };
     $("task-dialog-list").textContent = listName(list);
+    renderTaskDialog();
+    Flucti.openDialog($("task-dialog"));
+  }
+
+  function openTaskDialogForEdit(task) {
+    const list = state.lists.find((l) => l.id === task.listId);
+
+    draft = {
+      listId: task.listId,
+      kind: task.kind,
+      values: clone(task.values || {}),
+      recurrence: clone(
+        task.recurrence || {
+          mode: "interval",
+          every: 1,
+          unit: "week",
+          days: [],
+        }
+      ),
+      showErrors: false,
+      editingTaskId: task.id,
+    };
+
+    draft.values.title = task.title;
+
+    $("task-dialog-list").textContent = list ? listName(list) : "";
+    $("task-dialog-title").textContent = t("task.dialog.edit");
+
     renderTaskDialog();
     Flucti.openDialog($("task-dialog"));
   }
@@ -952,15 +1003,24 @@
     $("task-dialog").close();
   }
 
-  // Cerrar la ventana (X, Esc, fuera o "Guardar") guarda la tarea si está completa.
-  function attemptCloseTask() {
+  // Cerrar con la cruz guarda la tarea si está completa; sin título se descarta automáticamente.
+  // "Guardar" (o Enter en el título) sin título no descarta nada: deja la ventana abierta señalándolo en rojo.
+  function attemptCloseTask(viaSave = false) {
     if (!draft) {
       $("task-dialog").close();
       return;
     }
     const listId = draft.listId;
-    if (!(draft.values.title || "").trim()) {
-      // sin título la tarea se descarta automáticamente
+    if (titleEmpty()) {
+      draft.showErrors = true;
+      refreshTaskError();
+
+      if (viaSave) {
+        const input = titleGroup() && titleGroup().querySelector("input");
+        if (input) input.focus();
+        return;
+      }
+
       closeTaskDialog();
       titleDrafts.delete(listId);
       renderGrid();
@@ -972,11 +1032,27 @@
       return;
     }
     const task = taskFromDraft();
-    state.tasks.push(task);
+
+    if (draft.editingTaskId) {
+      const index = state.tasks.findIndex((x) => x.id === draft.editingTaskId);
+
+      if (index !== -1) {
+        const oldTask = state.tasks[index];
+
+        state.tasks[index] = {
+          ...task,
+          id: oldTask.id,
+          createdAt: oldTask.createdAt,
+          ...(oldTask.done ? { done: true, completedAt: oldTask.completedAt } : {}),
+        };
+      }
+    } else {
+      state.tasks.push(task);
+    }
+
     saveState();
     closeTaskDialog();
     titleDrafts.delete(listId);
-    cardErrors.delete(listId);
     renderGrid(task.id);
   }
 
@@ -1021,19 +1097,19 @@
       info.locked
         ? h("span")
         : h(
-            "button",
-            {
-              class: "icon-btn small",
-              type: "button",
-              "aria-label": `${t("param.remove")}: ${info.name}`,
-              onclick: () => {
-                state.params = state.params.filter((x) => x.id !== p.id); // los datos de las tareas se conservan
-                afterParamsChange();
-                renderSettings();
-              },
+          "button",
+          {
+            class: "icon-btn small",
+            type: "button",
+            "aria-label": `${t("param.remove")}: ${info.name}`,
+            onclick: () => {
+              state.params = state.params.filter((x) => x.id !== p.id); // los datos de las tareas se conservan
+              afterParamsChange();
+              renderSettings();
             },
-            icon("trash", 16)
-          )
+          },
+          icon("trash", 16)
+        )
     );
   }
 
@@ -1144,27 +1220,27 @@
       grid,
       removed.length
         ? h(
+          "div",
+          { class: "removed" },
+          h("p", { class: "settings-hint", text: t("settings.params.restore") }),
+          h(
             "div",
-            { class: "removed" },
-            h("p", { class: "settings-hint", text: t("settings.params.restore") }),
-            h(
-              "div",
-              { class: "chip-row" },
-              removed.map((d) => h("button", { class: "chip", type: "button", onclick: () => restoreParam(d.id) }, icon("plus", 14), t(`param.${d.id}`)))
-            )
+            { class: "chip-row" },
+            removed.map((d) => h("button", { class: "chip", type: "button", onclick: () => restoreParam(d.id) }, icon("plus", 14), t(`param.${d.id}`)))
           )
+        )
         : null,
       paramForm
         ? paramFormElement()
         : h("button", {
-            class: "text-btn",
-            type: "button",
-            text: t("param.add"),
-            onclick: () => {
-              paramForm = newParamForm();
-              renderSettings();
-            },
-          })
+          class: "text-btn",
+          type: "button",
+          text: t("param.add"),
+          onclick: () => {
+            paramForm = newParamForm();
+            renderSettings();
+          },
+        })
     );
   }
 
@@ -1210,11 +1286,165 @@
     );
   }
 
+  function aboutSection() {
+    const el = (tag, className, text) => {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    };
+
+    const wrapper = el("div", "about-section");
+
+    // Cabecera principal
+    const hero = el("div", "about-hero");
+    hero.append(
+      el("span", "about-badge", t("about.badge")),
+      el("h3", "about-heading", t("about.title")),
+      el("p", "about-lead", t("about.description"))
+    );
+
+    // Qué es Flucti
+    const whatIsCard = el("div", "about-card");
+    whatIsCard.append(
+      el("h4", "about-card-title", t("about.whatIs.title")),
+      el("p", "about-text", t("about.whatIs.text")),
+      el("p", "about-note", t("about.storage.text"))
+    );
+
+    // Funciones clave
+    const featuresBlock = el("div", "about-block");
+    featuresBlock.append(el("h4", "about-card-title", t("about.features.title")));
+
+    const grid = el("div", "about-grid");
+    const featureItems = [
+      { icon: "🌤️", title: "about.features.sky.title", desc: "about.features.sky.desc" },
+      { icon: "📋", title: "about.features.lists.title", desc: "about.features.lists.desc" },
+      { icon: "🔁", title: "about.features.tasks.title", desc: "about.features.tasks.desc" },
+      { icon: "⚙️", title: "about.features.params.title", desc: "about.features.params.desc" },
+      { icon: "🌍", title: "about.features.i18n.title", desc: "about.features.i18n.desc" },
+      { icon: "🛡️", title: "about.features.backups.title", desc: "about.features.backups.desc" }
+    ];
+
+    featureItems.forEach(({ icon, title, desc }) => {
+      const item = el("div", "about-feature-item");
+      const head = el("div", "about-feature-head");
+      head.append(
+        el("span", "about-feature-icon", icon),
+        el("strong", "about-feature-title", t(title))
+      );
+      item.append(head, el("p", "about-feature-desc", t(desc)));
+      grid.append(item);
+    });
+
+    featuresBlock.append(grid);
+
+    // Línea del tiempo de versiones desplegables
+    const changelogBlock = el("div", "about-block about-changelog");
+    changelogBlock.append(
+      el("h4", "about-card-title", t("about.changelog.title")),
+      el("p", "about-note", t("about.changelog.subtitle"))
+    );
+
+    const timeline = el("div", "about-timeline");
+    const releases = [
+      {
+        versionKey: "about.versions.v001.label",
+        dateKey: "about.versions.v001.date",
+        titleKey: "about.versions.v001.title",
+        bodyKey: "about.versions.v001.body",
+        openByDefault: false
+      },
+      {
+        versionKey: "about.versions.v002.label",
+        dateKey: "about.versions.v002.date",
+        titleKey: "about.versions.v002.title",
+        bodyKey: "about.versions.v002.body",
+        openByDefault: false
+      },
+      {
+        versionKey: "about.versions.v003.label",
+        dateKey: "about.versions.v003.date",
+        titleKey: "about.versions.v003.title",
+        bodyKey: "about.versions.v003.body",
+        openByDefault: false
+      },
+      {
+        versionKey: "about.versions.v004.label",
+        dateKey: "about.versions.v004.date",
+        titleKey: "about.versions.v004.title",
+        bodyKey: "about.versions.v004.body",
+        openByDefault: false
+      },
+      {
+        versionKey: "about.versions.v005.label",
+        dateKey: "about.versions.v005.date",
+        titleKey: "about.versions.v005.title",
+        bodyKey: "about.versions.v005.body",
+        openByDefault: false
+      }
+    ];
+
+    releases.forEach(({ versionKey, dateKey, titleKey, bodyKey, openByDefault }) => {
+      const entry = el("details", "about-timeline-item");
+      if (openByDefault) entry.open = true;
+
+      const summary = el("summary", "about-timeline-summary");
+      const headerRow = el("span", "about-timeline-header");
+      headerRow.append(
+        el("strong", "about-timeline-version", t(versionKey)),
+        el("span", "about-timeline-date", t(dateKey))
+      );
+
+      // Aquí se crea y se añade el punto (<span class="about-timeline-dot"></span>)
+      summary.append(
+        el("span", "about-timeline-dot"),
+        headerRow
+      );
+
+      const content = el("div", "about-timeline-content");
+      content.append(
+        el("h5", "about-timeline-title", t(titleKey)),
+        el("p", "about-text", t(bodyKey))
+      );
+
+      entry.append(summary, content);
+      timeline.append(entry);
+    });
+
+    changelogBlock.append(timeline);
+
+    // Próximos pasos / futuro
+    const futureCard = el("div", "about-card about-card--future");
+    futureCard.append(
+      el("h4", "about-card-title", t("about.future.title")),
+      el("p", "about-text", t("about.future.text"))
+    );
+
+    // Créditos
+    const aboutMeCard = el("div", "about-card about-card--credits");
+    aboutMeCard.append(
+      el("p", "about-card-title", t("about.me.title")),
+      el("p", "about-card-title", t("about.me.description")),
+      el("h5", "about-text", t("about.me.contact"))
+    );
+    const creditsCard = el("div", "about-card about-card--credits");
+    creditsCard.append(
+      el("h4", "about-card-title", t("about.credits.title")),
+      el("p", "about-text", t("about.credits.weather")),
+      el("p", "about-text", t("about.credits.font")),
+      el("p", "about-meta", t("about.credits.defaultLocation"))
+    );
+
+    wrapper.append(hero, whatIsCard, featuresBlock, changelogBlock, futureCard, aboutMeCard, creditsCard);
+    return wrapper;
+  }
+
   function settingsMenu() {
     return h(
       "div",
       { class: "settings-menu" },
-      ["params", "lists"].map((view) =>
+      ["params", "lists", "about"].map((view) =>
         h(
           "button",
           {
@@ -1225,7 +1455,18 @@
               renderSettings();
             },
           },
-          h("span", { text: t(view === "params" ? "settings.params" : "settings.lists") }),
+          h(
+            "span",
+            {
+              text: t(
+                view === "params"
+                  ? "settings.params"
+                  : view === "lists"
+                    ? "settings.lists"
+                    : "settings.about"
+              ),
+            }
+          ),
           icon("chevron", 18)
         )
       )
@@ -1234,8 +1475,24 @@
 
   function renderSettings() {
     $("settings-back").hidden = settingsView === null;
-    $("settings-title").textContent = settingsView === "params" ? t("settings.params") : settingsView === "lists" ? t("settings.lists") : t("menu.title");
-    $("settings-body").replaceChildren(settingsView === "params" ? paramsSection() : settingsView === "lists" ? listsSection() : settingsMenu());
+    $("settings-title").textContent =
+      settingsView === "params"
+        ? t("settings.params")
+        : settingsView === "lists"
+          ? t("settings.lists")
+          : settingsView === "about"
+            ? t("settings.about")
+            : t("menu.title");
+
+    $("settings-body").replaceChildren(
+      settingsView === "params"
+        ? paramsSection()
+        : settingsView === "lists"
+          ? listsSection()
+          : settingsView === "about"
+            ? aboutSection()
+            : settingsMenu()
+    );
   }
 
   /* ------------------------------------------------------------------------
@@ -1286,20 +1543,20 @@
       }),
       index > 0
         ? h(
-            "button",
-            {
-              class: "icon-btn small",
-              type: "button",
-              "aria-label": t("sort.up"),
-              onclick: () => {
-                const a = list.sort.indexOf(rules[index - 1]);
-                const b = list.sort.indexOf(rule);
-                [list.sort[a], list.sort[b]] = [list.sort[b], list.sort[a]];
-                changed();
-              },
+          "button",
+          {
+            class: "icon-btn small",
+            type: "button",
+            "aria-label": t("sort.up"),
+            onclick: () => {
+              const a = list.sort.indexOf(rules[index - 1]);
+              const b = list.sort.indexOf(rule);
+              [list.sort[a], list.sort[b]] = [list.sort[b], list.sort[a]];
+              changed();
             },
-            icon("up", 16)
-          )
+          },
+          icon("up", 16)
+        )
         : h("span"),
       h(
         "button",
@@ -1369,16 +1626,16 @@
         ...rules.map((_, i) => sortRow(list, rules, i, criteria)),
         unused
           ? h("button", {
-              class: "text-btn",
-              type: "button",
-              text: t("sort.add"),
-              onclick: () => {
-                list.sort.push({ by: unused.id, dir: defaultDirection(unused.kind) });
-                saveState();
-                renderGrid();
-                renderListDialog();
-              },
-            })
+            class: "text-btn",
+            type: "button",
+            text: t("sort.add"),
+            onclick: () => {
+              list.sort.push({ by: unused.id, dir: defaultDirection(unused.kind) });
+              saveState();
+              renderGrid();
+              renderListDialog();
+            },
+          })
           : null
       ),
       h(
@@ -1445,7 +1702,7 @@
 
   Flucti.bindDialog(settingsDialog);
   Flucti.bindDialog(listDialog);
-  Flucti.bindDialog(taskDialog, attemptCloseTask);
+  Flucti.bindDialog(taskDialog);
 
   $("menu-btn").addEventListener("click", () => {
     settingsView = null;
@@ -1465,14 +1722,18 @@
     if (settingsDialog.open) renderSettings();
   });
 
-  $("task-close").addEventListener("click", attemptCloseTask);
-  $("task-save-btn").addEventListener("click", attemptCloseTask);
-  taskDialog.addEventListener("cancel", (event) => {
-    event.preventDefault(); // Esc: se comporta como cerrar con la X
-    attemptCloseTask();
-  });
-  taskDialog.addEventListener("close", () => (draft = null)); // cierre forzado por el navegador: se descarta
+  $("task-close").addEventListener("click", () => attemptCloseTask(false));
+  $("task-save-btn").addEventListener("click", () => attemptCloseTask(true));
+  taskDialog.addEventListener("close", () => {
+    if (draft && !draft.editingTaskId && (draft.values.title || "").trim()) {
+      titleDrafts.set(draft.listId, cleanTitle(draft.values.title));
+      draft = null;
+      renderGrid();
+    }
 
+    draft = null;
+    $("task-dialog-title").textContent = t("task.dialog.new");
+  });
   // Al cambiar de idioma se vuelve a dibujar lo que genera este archivo.
   I18n.onChange(() => {
     renderGrid();

@@ -333,7 +333,7 @@ const UI = (() => {
 
   /* ------------------------------------------------------------------------
      Selector de hora: timePicker({ value: "HH:MM" o "", onChange, label, placeholder, disabled })
-     Horas en una cuadrícula y minutos de 5 en 5.
+     Dos columnas con desplazamiento: horas (00-23) y minutos (00-59).
      ------------------------------------------------------------------------ */
   function timePicker({ value, onChange, label, placeholder, disabled }) {
     let current = value || "";
@@ -342,18 +342,31 @@ const UI = (() => {
     const button = h("button", { type: "button", class: "field picker-button", "aria-haspopup": "dialog", "aria-expanded": "false", "aria-label": label, disabled: Boolean(disabled) }, icon("clock", 16), text);
     const panel = h("div", { class: "popover time-panel", role: "dialog", "aria-label": label, hidden: true });
 
-    const hourButtons = Array.from({ length: 24 }, (_, i) => h("button", { type: "button", class: "time-cell", text: pad2(i), onclick: () => pick(pad2(i), null) }));
-    const minuteButtons = Array.from({ length: 12 }, (_, i) => h("button", { type: "button", class: "time-cell", text: pad2(i * 5), onclick: () => pick(null, pad2(i * 5)) }));
+    const cells = (count, which) =>
+      Array.from({ length: count }, (_, i) =>
+        h("button", { type: "button", class: "time-cell", text: pad2(i), onclick: () => (which === "hour" ? pick(pad2(i), null) : pick(null, pad2(i))) })
+      );
+    const hourButtons = cells(24, "hour");
+    const minuteButtons = cells(60, "minute");
+    const hourColumn = h("div", { class: "time-col hours" }, hourButtons);
+    const minuteColumn = h("div", { class: "time-col minutes" }, minuteButtons);
 
     function paint() {
       text.textContent = current || placeholder;
       text.classList.toggle("is-placeholder", !current);
       const [hh, mm] = current ? current.split(":") : [null, null];
       hourButtons.forEach((b, i) => b.classList.toggle("is-selected", pad2(i) === hh));
-      minuteButtons.forEach((b, i) => b.classList.toggle("is-selected", pad2(i * 5) === mm));
+      minuteButtons.forEach((b, i) => b.classList.toggle("is-selected", pad2(i) === mm));
     }
 
-    // Al elegir la hora se pone en punto; al elegir los minutos se cierra.
+    // Al abrir, cada columna se desplaza hasta la hora y los minutos elegidos.
+    function reveal(column, buttons, selected) {
+      const target = buttons[selected];
+      const top = target ? target.offsetTop - column.clientHeight / 2 + target.offsetHeight / 2 : 0;
+      column.scrollTop = Number.isFinite(top) ? Math.max(0, top) : 0;
+    }
+
+    // Al elegir la hora, los minutos se quedan como estaban (o en punto); al elegir los minutos se cierra.
     function pick(hour, minute) {
       const [hh, mm] = current ? current.split(":") : [null, null];
       current = `${hour ?? hh ?? "09"}:${minute ?? mm ?? "00"}`;
@@ -365,9 +378,13 @@ const UI = (() => {
       }
     }
 
-    panel.append(h("div", { class: "time-grid hours" }, hourButtons), h("div", { class: "time-grid minutes" }, minuteButtons));
+    panel.append(hourColumn, minuteColumn);
     root.append(button, panel);
-    const pop = makePopover(root, button, panel);
+    const pop = makePopover(root, button, panel, () => {
+      const [hh, mm] = current ? current.split(":").map(Number) : [-1, -1];
+      reveal(hourColumn, hourButtons, hh);
+      reveal(minuteColumn, minuteButtons, mm);
+    });
     paint();
     root.picker = {
       get value() { return current; },

@@ -23,15 +23,13 @@ const Flucti = {
     dialog.showModal();
   },
 
-  // Sigue si la ventana está abierta y permite cerrarla pulsando fuera del contenido.
-  bindDialog(dialog, onBackdrop) {
+  // Sigue si la ventana está abierta. Solo se sale con su cruz: pulsar fuera o Esc no la cierran.
+  bindDialog(dialog) {
     dialog.addEventListener("close", () => {
       Flucti.openDialogs.delete(dialog);
       if (!Flucti.openDialogs.size) document.documentElement.classList.remove("modal-open");
     });
-    dialog.addEventListener("click", (event) => {
-      if (event.target === dialog) (onBackdrop || (() => dialog.close()))();
-    });
+    dialog.addEventListener("cancel", (event) => event.preventDefault());
   },
 };
 

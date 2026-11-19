@@ -16,6 +16,8 @@
   /* Forma y espacio */
   --radius-s: 4px;
   --radius-m: 10px;
+  --danger: #e5484d; /* avisos y campos que faltan */
+  --modal-radius: 1.25rem; /* esquinas de las ventanas; las barras de desplazamiento usan el mismo */
   --control: 3rem; /* alto del campo de la tarea y lado de los botones cuadrados */
   --space-s: 0.75rem;
   --space-m: 1.5rem;
@@ -400,6 +402,7 @@ body.ready .tasks::before {
   min-width: 0;
   overflow-wrap: anywhere;
   transition: color 0.2s var(--ease);
+  cursor: pointer;
 }
 
 /* Casillas: cuadrados redondeados con los colores de la paleta (tarea, ajustes y formularios) */
@@ -564,7 +567,7 @@ html.modal-open {
   color: var(--ink);
   background: var(--surface);
   border: 0;
-  border-radius: 1.25rem;
+  border-radius: var(--modal-radius);
 }
 
 .modal-wide {
@@ -682,7 +685,7 @@ textarea.field {
 }
 
 .text-btn.danger {
-  color: color-mix(in srgb, #e5484d 75%, var(--ink));
+  color: color-mix(in srgb, var(--danger) 75%, var(--ink));
 }
 
 .icon-btn.small {
@@ -694,7 +697,7 @@ textarea.field {
   min-height: 1.2em;
   margin: var(--space-s) 0 0;
   font-size: var(--text-s);
-  color: color-mix(in srgb, #e5484d 75%, var(--ink));
+  color: color-mix(in srgb, var(--danger) 75%, var(--ink));
 }
 
 /* Deslizador de varias opciones (tipo de tarea, tipo de repetición) */
@@ -757,12 +760,14 @@ textarea.field {
   color: var(--muted);
 }
 
-.field-group.invalid .field {
-  border-color: color-mix(in srgb, #e5484d 75%, var(--ink));
+.field-group.invalid .field,
+.add-input.invalid {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger);
 }
 
 .field-group.invalid .field-label {
-  color: color-mix(in srgb, #e5484d 75%, var(--ink));
+  color: var(--danger);
 }
 
 .date-row {
@@ -961,15 +966,28 @@ textarea.field {
 
 /* 12. Listas: una tarjeta por lista -------------------------------------- */
 .lists-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr); /* pantallas pequeñas: una lista por fila */
-  align-items: start;
+  display: flex;
+  flex-direction: column; /* pantallas pequeñas: una lista por fila */
   gap: 1rem;
+}
+
+.lists-col {
+  display: contents; /* en pantallas pequeñas las dos columnas se funden en una sola */
 }
 
 @media (min-width: 56rem) {
   .lists-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)); /* pantallas grandes: dos listas por fila */
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  /* Pantallas grandes: dos columnas. Las listas se apilan en cada una sin huecos entre ellas. */
+  .lists-col {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: 1rem;
+    min-width: 0;
   }
 }
 
@@ -1000,17 +1018,6 @@ textarea.field {
 .card-count {
   font-size: var(--text-s);
   color: var(--muted);
-}
-
-.card-error {
-  min-height: 0;
-  margin: 0.5rem 0 0;
-  font-size: var(--text-s);
-  color: color-mix(in srgb, #e5484d 75%, var(--ink));
-}
-
-.card-error:empty {
-  display: none;
 }
 
 .card-empty {
@@ -1278,27 +1285,33 @@ textarea.field {
   background: color-mix(in srgb, var(--ink) 8%, transparent);
 }
 
-/* Hora: horas en cuadrícula y minutos de 5 en 5 */
+/* Hora: dos columnas con desplazamiento (horas 00-23 y minutos 00-59) */
 .time-panel {
   right: 0;
   left: auto;
-  width: 15rem;
-  padding: 0.6rem;
-}
-
-.time-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 2px;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  width: 11rem;
+  padding: 0.5rem;
 }
 
-.time-grid.minutes {
-  margin-top: 0.5rem;
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--line);
+.time-col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.time-col + .time-col {
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--line);
 }
 
 .time-cell {
+  flex: none;
   padding: 0.4rem 0;
   font: inherit;
   font-size: var(--text-s);
@@ -1332,24 +1345,44 @@ textarea.field {
   min-width: 0;
 }
 
-/* 14. Barras de desplazamiento: un rectángulo redondeado con el color de la paleta ---- */
-.modal,
-textarea,
-.dropdown-panel {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--ink) 30%, transparent) transparent;
+/* 14. Barras de desplazamiento: solo la barra (sin flechas), un rectángulo redondeado con el color
+   de la paleta y con el mismo radio que el menú donde está.
+   Chrome, Edge y Safari usan ::-webkit-scrollbar. Ojo: si en esos navegadores se declara también
+   scrollbar-width o scrollbar-color, ignoran los estilos ::-webkit-scrollbar (y vuelven las flechas),
+   así que esas dos propiedades solo se usan donde no existe ::-webkit-scrollbar (Firefox). ---- */
+@supports not selector(::-webkit-scrollbar) {
+  .modal,
+  textarea,
+  .dropdown-panel,
+  .time-col {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--ink) 30%, transparent) transparent;
+  }
 }
 
 .modal::-webkit-scrollbar,
 textarea::-webkit-scrollbar,
-.dropdown-panel::-webkit-scrollbar {
+.dropdown-panel::-webkit-scrollbar,
+.time-col::-webkit-scrollbar {
   width: 10px;
   height: 10px;
+}
+
+/* sin las flechas de subir y bajar */
+.modal::-webkit-scrollbar-button,
+textarea::-webkit-scrollbar-button,
+.dropdown-panel::-webkit-scrollbar-button,
+.time-col::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+  -webkit-appearance: none;
 }
 
 .modal::-webkit-scrollbar-track,
 textarea::-webkit-scrollbar-track,
 .dropdown-panel::-webkit-scrollbar-track,
+.time-col::-webkit-scrollbar-track,
 .modal::-webkit-scrollbar-corner,
 textarea::-webkit-scrollbar-corner {
   background: transparent;
@@ -1357,18 +1390,40 @@ textarea::-webkit-scrollbar-corner {
 
 .modal::-webkit-scrollbar-thumb,
 textarea::-webkit-scrollbar-thumb,
-.dropdown-panel::-webkit-scrollbar-thumb {
+.dropdown-panel::-webkit-scrollbar-thumb,
+.time-col::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--ink) 30%, transparent);
   background-clip: padding-box;
   border: 3px solid transparent;
-  border-radius: 999px;
 }
 
 .modal::-webkit-scrollbar-thumb:hover,
 textarea::-webkit-scrollbar-thumb:hover,
-.dropdown-panel::-webkit-scrollbar-thumb:hover {
+.dropdown-panel::-webkit-scrollbar-thumb:hover,
+.time-col::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--ink) 50%, transparent);
   background-clip: padding-box;
+}
+
+/* El radio de la barra y el margen del carril siguen al de su menú, para que no roce las esquinas. */
+.modal::-webkit-scrollbar-track {
+  margin-block: var(--modal-radius);
+}
+
+.modal::-webkit-scrollbar-thumb {
+  border-radius: var(--modal-radius);
+}
+
+textarea::-webkit-scrollbar-track,
+.dropdown-panel::-webkit-scrollbar-track,
+.time-col::-webkit-scrollbar-track {
+  margin-block: var(--radius-m);
+}
+
+textarea::-webkit-scrollbar-thumb,
+.dropdown-panel::-webkit-scrollbar-thumb,
+.time-col::-webkit-scrollbar-thumb {
+  border-radius: var(--radius-m);
 }
 
 /* Sin flechas de subir y bajar en los campos de número */
@@ -1431,4 +1486,123 @@ input[type="number"]::-webkit-outer-spin-button {
 .check-group.stacked {
   flex-direction: column;
   gap: var(--space-s);
+}
+
+.about-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.about-hero,
+.about-card,
+.about-feature-item {
+  border-radius: 14px;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.about-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  opacity: 0.85;
+  margin-bottom: 0.4rem;
+}
+
+.about-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.about-feature-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.35rem;
+}
+
+.about-feature-desc,
+.about-note,
+.about-meta {
+  font-size: 0.875rem;
+  opacity: 0.85;
+  margin: 0.35rem 0 0;
+}
+
+.about-heading,
+.about-card-title {
+  margin-top: 0;
+}
+
+.about-timeline {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 0.65rem;
+  margin-left: 0.35rem;
+  padding-left: 1.25rem;
+  border-left: 2px solid rgba(255, 255, 255, 0.25);
+}
+
+.about-timeline-item {
+  position: relative;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 0.7rem 0.9rem;
+}
+
+.about-timeline-dot {
+  position: absolute;
+  left: calc(-1.25rem - 1px);
+  top: 1.05rem;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+  pointer-events: none;
+}
+
+.about-timeline-summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.about-timeline-summary::-webkit-details-marker {
+  display: none;
+}
+
+.about-timeline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.about-timeline-version {
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.about-timeline-date {
+  font-size: 0.85rem;
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
+}
+
+.about-timeline-content {
+  margin-top: 0.55rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.about-timeline-title {
+  margin: 0 0 0.3rem 0;
+  font-size: 0.95rem;
+  font-weight: 600;
 }
