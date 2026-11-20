@@ -180,14 +180,16 @@ const UI = (() => {
   }
 
   /* ------------------------------------------------------------------------
-     Lista desplegable: dropdown({ value, options: [{ value, label }], onChange, label })
+     Lista desplegable: dropdown({ value, options: [{ value, label, color? }], onChange, label })
      ------------------------------------------------------------------------ */
   function dropdown({ value, options, onChange, label }) {
     const root = h("div", { class: "dropdown" });
     const text = h("span", { class: "dropdown-text" });
+    const dot = h("span", { class: "option-dot", hidden: true }); // color de la opción elegida (si la tiene)
     const button = h(
       "button",
       { type: "button", class: "field dropdown-button", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": label },
+      dot,
       text,
       icon("chevronDown", 16)
     );
@@ -199,18 +201,19 @@ const UI = (() => {
         type: "button",
         role: "option",
         class: "dropdown-option",
-        text: option.label,
         onclick: () => {
           pick(option.value);
           pop.close();
           button.focus();
         },
-      })
+      }, option.color ? h("span", { class: "option-dot", style: `--dot:${option.color}` }) : null, option.label)
     );
 
     function paint() {
       const selected = options.find((o) => o.value === current) || options[0];
       text.textContent = selected ? selected.label : "";
+      dot.hidden = !(selected && selected.color);
+      if (selected && selected.color) dot.style.setProperty("--dot", selected.color);
       choices.forEach((choice, i) => {
         const on = options[i].value === current;
         choice.setAttribute("aria-selected", String(on));

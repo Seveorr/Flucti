@@ -160,16 +160,16 @@ const TRANSLATIONS = {
 
   /* Ajustes: parámetros de las tareas */
   "settings.params": {
-    es: "Parámetros de las tareas",
-    ca: "Paràmetres de les tasques",
-    en: "Task parameters",
-    de: "Aufgabenparameter",
+    es: "Parámetros por defecto",
+    ca: "Paràmetres per defecte",
+    en: "Default parameters",
+    de: "Standardparameter",
   },
   "settings.params.hint": {
-    es: "Elige qué datos tiene una tarea. El título siempre está.",
-    ca: "Tria quines dades té una tasca. El títol sempre hi és.",
-    en: "Choose what data a task has. The title is always there.",
-    de: "Lege fest, welche Angaben eine Aufgabe hat. Der Titel ist immer dabei.",
+    es: "Parámetros con los que empiezan las listas nuevas. Cada lista puede cambiar los suyos en sus opciones.",
+    ca: "Paràmetres amb què comencen les llistes noves. Cada llista pot canviar els seus a les seves opcions.",
+    en: "Parameters that new lists start with. Each list can change its own in its options.",
+    de: "Parameter, mit denen neue Listen starten. Jede Liste kann ihre eigenen in ihren Optionen ändern.",
   },
   "settings.back": { es: "Volver", ca: "Enrere", en: "Back", de: "Zurück" },
   "settings.params.restore": {
@@ -186,10 +186,10 @@ const TRANSLATIONS = {
   "param.name": { es: "Nombre del parámetro", ca: "Nom del paràmetre", en: "Parameter name", de: "Parametername" },
   "param.type": { es: "Tipo", ca: "Tipus", en: "Type", de: "Typ" },
   "param.options": {
-    es: "Opciones separadas por comas",
-    ca: "Opcions separades per comes",
-    en: "Options separated by commas",
-    de: "Optionen, durch Kommas getrennt",
+    es: "Opciones",
+    ca: "Opcions",
+    en: "Options",
+    de: "Optionen",
   },
   "param.create": { es: "Añadir", ca: "Afegeix", en: "Add", de: "Hinzufügen" },
   "param.cancel": { es: "Cancelar", ca: "Cancel·la", en: "Cancel", de: "Abbrechen" },
@@ -245,6 +245,42 @@ const TRANSLATIONS = {
     en: "Press again to delete the list and its tasks",
     de: "Noch einmal drücken, um die Liste und ihre Aufgaben zu löschen",
   },
+
+  /* Parámetros y aspecto de cada lista (ventana de la lista) */
+  "list.tabs": { es: "Apartados de la lista", ca: "Apartats de la llista", en: "List sections", de: "Abschnitte der Liste" },
+  "list.tab.params": { es: "Parámetros", ca: "Paràmetres", en: "Parameters", de: "Parameter" },
+  "list.tab.layout": { es: "Aspecto", ca: "Aspecte", en: "Look", de: "Darstellung" },
+  "list.tab.sort": { es: "Orden", ca: "Ordre", en: "Order", de: "Reihenfolge" },
+  "list.params.hint": {
+    es: "Solo afectan a esta lista. El título siempre está.",
+    ca: "Només afecten aquesta llista. El títol sempre hi és.",
+    en: "These only apply to this list. The title is always there.",
+    de: "Gelten nur für diese Liste. Der Titel ist immer dabei.",
+  },
+  "list.layout.hint": {
+    es: "Elige cómo se ve cada parámetro en la lista y en qué orden aparece.",
+    ca: "Tria com es veu cada paràmetre a la llista i en quin ordre apareix.",
+    en: "Choose how each parameter looks in the list and the order it appears in.",
+    de: "Lege fest, wie jeder Parameter in der Liste aussieht und in welcher Reihenfolge er erscheint.",
+  },
+  "layout.style": { es: "Cómo se ve", ca: "Com es veu", en: "Appearance", de: "Darstellung" },
+  "style.title": { es: "Título", ca: "Títol", en: "Title", de: "Titel" },
+  "style.description": { es: "Descripción", ca: "Descripció", en: "Description", de: "Beschreibung" },
+  "style.meta": { es: "Dato", ca: "Dada", en: "Detail", de: "Detail" },
+  "style.tag": { es: "Etiqueta", ca: "Etiqueta", en: "Tag", de: "Etikett" },
+  "style.badge": { es: "Etiqueta de color", ca: "Etiqueta de color", en: "Color tag", de: "Farbetikett" },
+  "style.hidden": { es: "Oculto", ca: "Amagat", en: "Hidden", de: "Ausgeblendet" },
+  "layout.color": { es: "Color", ca: "Color", en: "Color", de: "Farbe" },
+  "layout.color.custom": { es: "Elegir otro color", ca: "Tria un altre color", en: "Pick another color", de: "Andere Farbe wählen" },
+  "layout.up": { es: "Mover arriba", ca: "Mou amunt", en: "Move up", de: "Nach oben" },
+  "layout.down": { es: "Mover abajo", ca: "Mou avall", en: "Move down", de: "Nach unten" },
+  "param.edit": { es: "Editar parámetro", ca: "Edita el paràmetre", en: "Edit parameter", de: "Parameter bearbeiten" },
+
+  "option.add": { es: "Añadir opción", ca: "Afegeix una opció", en: "Add option", de: "Option hinzufügen" },
+  "option.label": { es: "Nombre de la opción", ca: "Nom de l'opció", en: "Option name", de: "Name der Option" },
+  "option.placeholder": { es: "Opción", ca: "Opció", en: "Option", de: "Option" },
+  "option.up": { es: "Subir opción", ca: "Puja l'opció", en: "Move option up", de: "Option nach oben" },
+  "option.remove": { es: "Quitar opción", ca: "Treu l'opció", en: "Remove option", de: "Option entfernen" },
 
   // --- Existentes ---
   "settings.about": {
@@ -524,6 +560,32 @@ const TRANSLATIONS = {
     en: "The app's style has been improved and minor errors have been fixed. Additionally, the 'About Flucti' section has been added with information about the application and its credits.",
     de: "Der Stil der Anwendung wurde verbessert und kleinere Fehler wurden behoben. Zudem wurde der Abschnitt 'Über Flucti' hinzugefügt, der Informationen über die Anwendung und ihre Urheber enthält."
   },
+
+  "about.versions.v006.label": {
+    es: "v.0.1.5-beta",
+    ca: "v.0.1.5-beta",
+    en: "v.0.1.5-beta",
+    de: "v.0.1.5-beta"
+  },
+  "about.versions.v006.date": {
+    es: "20/11/2026",
+    ca: "20/11/2026",
+    en: "20/11/2026",
+    de: "20/11/2026"
+  },
+  "about.versions.v006.title": {
+    es: "Parámetros personalizados por lista y mejora de su visualización",
+    ca: "Paràmetres personalitzats per llista i millora de la seva visualització",
+    en: "Custom parameters per list and improvement of their visualization",
+    de: "Benutzerdefinierte Parameter je Liste und Verbesserung ihrer Darstellung"
+  },
+  "about.versions.v006.body": {
+    es: "Ahora, cada lista puede tener sus propios parámetros personalizados y se ha mejorado la visualización de los mismos en la interfaz de usuario.",
+    ca: "Ara, cada llista pot tenir els seus propis paràmetres personalitzats i s'ha millorat la visualització dels mateixos a la interfície d'usuari.",
+    en: "Now, each list can have its own custom parameters and the visualization of these has been improved in the user interface.",
+    de: "Jetzt kann jede Liste ihre eigenen benutzerdefinierten Parameter haben und die Darstellung dieser wurde in der Benutzeroberfläche verbessert."
+  },
+
 "about.me.title": {
     es: "¿Quién soy?",
     ca: "Qui soc?",

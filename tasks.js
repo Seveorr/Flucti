@@ -4,8 +4,10 @@
    tasks.js — tareas, listas y parámetros (todo se guarda en este dispositivo)
 
    Datos (localStorage "flucti:data:v1"):
-     params: qué parámetros tiene una tarea (los que trae la app y los que añade el usuario)
-     lists:  listas { id, name, hidden, showCompleted, sort }; name null = nombre por defecto ("Actual")
+     params: parámetros por defecto: los que reciben las listas nuevas
+     lists:  listas { id, name, hidden, showCompleted, sort, params, layout }; name null = nombre por defecto ("Actual")
+             params: los parámetros de esa lista (cada una tiene los suyos)
+             layout: cómo se ve cada parámetro en la lista y en qué orden { id, style, color }
      tasks:  tareas { id, listId, kind, title, values, recurrence, done, completedAt, createdAt }
 
    Norma: ninguna actualización borra las tareas guardadas. Al cambiar el formato de los datos se
@@ -18,7 +20,7 @@
   const $ = (id) => document.getElementById(id);
 
   const STORAGE_KEY = "flucti:data:v1";
-  const STATE_VERSION = 2;
+  const STATE_VERSION = 3;
   const STRIKE_DELAY = 380; // tiempo que se ve la tarea tachada
   const LEAVE_DURATION = 320; // duración de la animación de salida
 
@@ -58,7 +60,7 @@
     date: { type: "date", kinds: ["recurring"] },
     repeat: { type: "recurrence", kinds: ["recurring"], alwaysRequired: true },
     planned: { type: "date", kinds: ["once", "recurring"] },
-    energy: { type: "select", kinds: ["once", "recurring"], options: ["high", "medium", "low"] },
+    energy: { type: "select", kinds: ["once", "recurring"] }, // sus opciones se editan como las de cualquier lista desplegable
   };
 
   // Por defecto: descripción, vencimiento (hora opcional), planificación (opcional) y energía.
@@ -72,51 +74,99 @@
     { id: "energy", once: true, recurring: true, required: false },
   ];
 
-  const ENERGY_RANK = { low: 1, medium: 2, high: 3 };
+  // Opciones de la energía al empezar, de más a menos. Se pueden cambiar, quitar y añadir otras.
+  const DEFAULT_ENERGY = [
+    { id: "high", color: "#dc2626" },
+    { id: "medium", color: "#ca8a04" },
+    { id: "low", color: "#16a34a" },
+  ];
   const DEFAULT_SORT = [
     { by: "due", dir: "asc" }, // primero las que vencen antes
     { by: "energy", dir: "desc" }, // y, a igual fecha, las que más energía suponen
   ];
 
+  // Cómo se ve un parámetro en las tareas de una lista: título, descripción, dato (texto pequeño),
+  // etiqueta (palabra con contorno), etiqueta de color (rellena) u oculto.
+  const STYLES = ["title", "description", "meta", "tag", "badge", "hidden"];
+  const PALETTE = ["#2563eb", "#0d9488", "#16a34a", "#ca8a04", "#ea580c", "#dc2626", "#c026d3", "#64748b"];
+  const DEFAULT_COLOR = PALETTE[0];
+  const isColor = (v) => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v);
+  const defaultStyle = (id) => (id === "title" ? "title" : id === "description" ? "description" : "meta");
+
+  // Color del texto que se lee bien sobre un fondo (blanco u oscuro según lo claro que sea).
+  function inkFor(color) {
+    const n = parseInt(color.slice(1), 16);
+    const luminance = (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255;
+    return luminance > 0.6 ? "#1e293b" : "#ffffff";
+  }
   /* ------------------------------------------------------------------------
      Estado: carga, normalización, copia de seguridad, migración y guardado
      ------------------------------------------------------------------------ */
+  // Una lista nueva empieza con los parámetros por defecto (una copia: cambiar los de una lista no toca los demás).
+  function makeList({ id = uid(), name = null, params = DEFAULT_PARAMS } = {}) {
+    return {
+      id,
+      name,
+      hidden: false,
+      showCompleted: false,
+      sort: clone(DEFAULT_SORT),
+      params: clone(params),
+      layout: params.map((p) => ({ id: p.id, style: defaultStyle(p.id), color: DEFAULT_COLOR })),
+    };
+  }
+
   function defaultState() {
-    const listId = uid();
+    const list = makeList();
     return {
       version: STATE_VERSION,
       params: DEFAULT_PARAMS.map((p) => ({ ...p })),
-      lists: [{ id: listId, name: null, hidden: false, showCompleted: false, sort: clone(DEFAULT_SORT) }],
-      currentListId: listId,
+      lists: [list],
+      currentListId: list.id,
       tasks: [],
     };
   }
 
-  // Deja los datos en el formato actual sin perder ninguna tarea.
-  function normalizeState(data) {
-    const base = defaultState();
-    if (!data || typeof data !== "object") return base;
+  // Opciones de una lista desplegable: { id, label, color }. Las guardadas como texto (versiones anteriores)
+  // pasan a objetos con el mismo texto como id, para que los valores de las tareas sigan valiendo.
+  // En la energía el nombre es opcional: sin él se usa el texto traducido.
+  function normalizeOptions(raw, fallback) {
+    const options = [];
+    const seen = new Set();
+    for (const o of Array.isArray(raw) ? raw : []) {
+      const id = typeof o === "string" ? o : o && typeof o.id === "string" ? o.id : "";
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const label = typeof o === "string" ? o : typeof o.label === "string" && o.label.trim() ? o.label : null;
+      const color = o && isColor(o.color) ? o.color : PALETTE[options.length % PALETTE.length];
+      options.push(label ? { id, label, color } : fallback ? { id, color } : { id, label: id, color });
+    }
+    return options.length || !fallback ? options : clone(fallback);
+  }
 
+  // Parámetros válidos de una lista o de los de por defecto (siempre con título).
+  function normalizeParams(raw) {
     const params = [];
     const seen = new Set();
-    for (const p of Array.isArray(data.params) ? data.params : []) {
+    for (const p of Array.isArray(raw) ? raw : []) {
       if (!p || typeof p.id !== "string" || seen.has(p.id)) continue;
       const def = BUILTIN[p.id];
       if (def) {
         seen.add(p.id);
-        params.push({
+        const entry = {
           id: p.id,
           once: def.kinds.includes("once") && (def.locked === true || p.once === true),
           recurring: def.kinds.includes("recurring") && (def.locked === true || p.recurring === true),
           required: def.locked === true || def.alwaysRequired === true || p.required === true,
-        });
+        };
+        if (def.type === "select") entry.options = normalizeOptions(p.options, DEFAULT_ENERGY);
+        params.push(entry);
       } else if (TYPES.includes(p.type) && typeof p.name === "string" && p.name) {
         seen.add(p.id);
         params.push({
           id: p.id,
           type: p.type,
           name: p.name,
-          options: p.type === "select" && Array.isArray(p.options) ? p.options.filter((o) => typeof o === "string" && o) : undefined,
+          options: p.type === "select" ? normalizeOptions(p.options) : undefined,
           once: p.once === true,
           recurring: p.recurring === true,
           required: p.required === true,
@@ -124,6 +174,36 @@
       }
     }
     if (!seen.has("title")) params.unshift({ ...DEFAULT_PARAMS[0] });
+    return params;
+  }
+
+  // Aspecto guardado de los parámetros de una lista: orden, estilo y color (lo que falte lo completa layoutOf).
+  function normalizeLayout(raw) {
+    const layout = [];
+    const seen = new Set();
+    for (const e of Array.isArray(raw) ? raw : []) {
+      if (!e || typeof e.id !== "string" || seen.has(e.id) || !STYLES.includes(e.style)) continue;
+      seen.add(e.id);
+      layout.push({ id: e.id, style: e.id === "title" && e.style === "hidden" ? "title" : e.style, color: isColor(e.color) ? e.color : DEFAULT_COLOR });
+    }
+    return layout;
+  }
+
+  // Aspecto de los parámetros de la lista, en el orden en que se ven. Los parámetros que aún no tienen
+  // aspecto se añaden al final; los de parámetros quitados se conservan (por si el parámetro vuelve) pero no salen.
+  function layoutOf(list) {
+    for (const p of list.params) {
+      if (!list.layout.some((e) => e.id === p.id)) list.layout.push({ id: p.id, style: defaultStyle(p.id), color: DEFAULT_COLOR });
+    }
+    return list.layout.filter((e) => list.params.some((p) => p.id === e.id));
+  }
+
+  // Deja los datos en el formato actual sin perder ninguna tarea.
+  function normalizeState(data) {
+    const base = defaultState();
+    if (!data || typeof data !== "object") return base;
+
+    const params = normalizeParams(data.params);
 
     const lists = (Array.isArray(data.lists) ? data.lists : [])
       .filter((l) => l && typeof l.id === "string")
@@ -135,9 +215,13 @@
         sort: Array.isArray(l.sort)
           ? l.sort.filter((s) => s && typeof s.by === "string" && (s.dir === "asc" || s.dir === "desc")).map((s) => ({ by: s.by, dir: s.dir }))
           : clone(DEFAULT_SORT),
+        // Las listas guardadas antes de tener parámetros propios conservan los que había.
+        params: Array.isArray(l.params) ? normalizeParams(l.params) : clone(params),
+        layout: normalizeLayout(l.layout),
       }));
     if (!lists.length) lists.push(base.lists[0]);
     if (lists.every((l) => l.hidden)) lists[0].hidden = false;
+    lists.forEach((list) => layoutOf(list));
 
     // Las tareas nunca se descartan: si algún dato falta se rellena con un valor por defecto.
     const tasks = [];
@@ -247,8 +331,9 @@
      ------------------------------------------------------------------------ */
   const visibleLists = () => state.lists.filter((l) => !l.hidden);
   const listName = (list) => list.name || t("list.default");
-  const hasParam = (id) => state.params.some((p) => p.id === id);
-  const recurringAvailable = () => hasParam("repeat"); // sin regla de repetición no hay tareas recurrentes nuevas
+  const listById = (id) => state.lists.find((l) => l.id === id) || state.lists[0];
+  const hasParam = (params, id) => params.some((p) => p.id === id);
+  const recurringAvailable = (params) => hasParam(params, "repeat"); // sin regla de repetición no hay tareas recurrentes nuevas
 
   // Parámetro con todos sus datos: nombre traducido, tipo, en qué tareas aparece y si es obligatorio.
   function paramInfo(p) {
@@ -260,7 +345,7 @@
       kinds: def ? def.kinds : ["once", "recurring"],
       locked: Boolean(def && def.locked),
       fixedRequired: Boolean(def && (def.locked || def.alwaysRequired)),
-      options: def ? def.options || null : p.options || null,
+      options: (def ? def.type : p.type) === "select" ? resolveOptions(p) : null,
       name: def ? t(`param.${p.id}`) : p.name,
       once: p.once,
       recurring: p.recurring,
@@ -268,10 +353,24 @@
     };
   }
 
-  const allParams = () => state.params.map(paramInfo);
-  const paramsFor = (kind) => allParams().filter((p) => p[kind]); // los que lleva ese tipo de tarea
-  const paramById = (id) => allParams().find((p) => p.id === id);
-  const optionLabel = (info, value) => (info.id === "energy" ? t(`energy.${value}`) : value);
+  const allParams = (params) => params.map(paramInfo);
+  const paramsFor = (params, kind) => allParams(params).filter((p) => p[kind]); // los que lleva ese tipo de tarea
+  const paramById = (params, id) => allParams(params).find((p) => p.id === id);
+  // Opciones de un parámetro de lista desplegable: { id, label, color }. En la energía, mientras no se
+  // le cambie el nombre, se usa el texto traducido.
+  function resolveOptions(p) {
+    const stored = p.options || (p.id === "energy" ? DEFAULT_ENERGY : []);
+    return stored.map((o) => ({ id: o.id, label: o.label ?? (p.id === "energy" ? t(`energy.${o.id}`) : o.id), color: o.color }));
+  }
+  const optionOf = (info, value) => (info.options || []).find((o) => o.id === value) || null;
+  const optionLabel = (info, value) => (optionOf(info, value) || { label: "" }).label;
+
+  // Una lista desplegable se ordena por la posición de sus opciones: la primera es la "mayor".
+  function selectRank(info, value) {
+    const options = (info && info.options) || [];
+    const i = options.findIndex((o) => o.id === value);
+    return i === -1 ? null : options.length - i;
+  }
 
   /* ------------------------------------------------------------------------
      Orden de las tareas
@@ -281,13 +380,13 @@
   const kindOfType = (type) => ({ date: "date", number: "number", select: "level", checkbox: "level" })[type] || "text";
 
   // Criterios por los que se puede ordenar una lista (solo los de parámetros que existen).
-  function sortCriteria() {
+  function sortCriteria(params = state.params) {
     const criteria = [];
-    if (hasParam("due") || hasParam("date")) criteria.push({ id: "due", label: t("param.due"), kind: "date" });
-    if (hasParam("planned")) criteria.push({ id: "planned", label: t("param.planned"), kind: "date" });
-    if (hasParam("energy")) criteria.push({ id: "energy", label: t("param.energy"), kind: "level" });
+    if (hasParam(params, "due") || hasParam(params, "date")) criteria.push({ id: "due", label: t("param.due"), kind: "date" });
+    if (hasParam(params, "planned")) criteria.push({ id: "planned", label: t("param.planned"), kind: "date" });
+    if (hasParam(params, "energy")) criteria.push({ id: "energy", label: t("param.energy"), kind: "level" });
     criteria.push({ id: "title", label: t("param.title"), kind: "text" }, { id: "created", label: t("sort.created"), kind: "created" });
-    for (const p of allParams()) if (!p.builtin) criteria.push({ id: p.id, label: p.name, kind: kindOfType(p.type) });
+    for (const p of allParams(params)) if (!p.builtin) criteria.push({ id: p.id, label: p.name, kind: kindOfType(p.type) });
     return criteria;
   }
 
@@ -298,7 +397,7 @@
       case "planned":
         return dateKey(task.values.planned);
       case "energy":
-        return ENERGY_RANK[task.values.energy] ?? null;
+        return selectRank(params.get("energy"), task.values.energy);
       case "title":
         return task.title;
       case "created":
@@ -309,10 +408,7 @@
         if (!info || v === undefined || v === null || v === "") return null;
         if (info.type === "number") return Number(v);
         if (info.type === "date") return dateKey(v);
-        if (info.type === "select") {
-          const i = (info.options || []).indexOf(v);
-          return i === -1 ? null : i;
-        }
+        if (info.type === "select") return selectRank(info, v);
         if (info.type === "checkbox") return v ? 1 : 0;
         return String(v);
       }
@@ -320,9 +416,9 @@
   }
 
   // Ordena por el primer criterio y, si empatan, por el siguiente. Lo que no tiene valor va siempre al final.
-  function sortTasks(tasks, sort) {
-    const kinds = new Map(sortCriteria().map((c) => [c.id, c.kind]));
-    const params = new Map(allParams().map((p) => [p.id, p]));
+  function sortTasks(tasks, sort, source = state.params) {
+    const kinds = new Map(sortCriteria(source).map((c) => [c.id, c.kind]));
+    const params = new Map(allParams(source).map((p) => [p.id, p]));
     const rules = sort.filter((r) => kinds.has(r.by));
     const locale = I18n.current().locale;
 
@@ -399,6 +495,9 @@
 
   /* ------------------------------------------------------------------------
      Tareas en pantalla
+     Cada lista decide cómo se ve cada parámetro y en qué orden (list.layout: { id, style, color }):
+     título, descripción, dato (texto pequeño), etiqueta, etiqueta de color u oculto.
+     Los datos y las etiquetas seguidos se juntan en una misma fila.
      ------------------------------------------------------------------------ */
   function formatValue(info, value) {
     if (info.type === "date") return value && value.date ? dateLabel(value, todayString()).text : "";
@@ -406,51 +505,73 @@
     return String(value);
   }
 
-  // Datos pequeños bajo el título: fecha, repetición, planificación, energía y parámetros propios.
-  function metaItems(task, dueLabel) {
-    const active = new Set(paramsFor(task.kind).map((p) => p.id));
-    const today = todayString();
-    const items = [];
+  const hasValue = (v) => !(v === undefined || v === null || v === "" || v === false);
 
-    if (dueLabel) {
-      const extra = task.done ? "" : dueLabel.diff === 1 ? " meta-tomorrow" : dueLabel.diff < 0 ? " meta-overdue" : "";
-      items.push(h("span", { class: `meta${extra}`, text: dueLabel.text }));
+  // Lo que se enseña de un parámetro en una tarea, o null si no hay nada que enseñar:
+  // { text, diff (días hasta la fecha), bars (nivel de energía), repeat }
+  function shownValue(task, info, style) {
+    if (info.id === "title") return { text: task.title };
+    if (!info[task.kind]) return null; // el parámetro no está activo para este tipo de tarea
+    if (info.id === "repeat") {
+      return task.kind === "recurring" && task.recurrence ? { text: repeatSummary(task.recurrence), repeat: true } : null;
     }
-    if (task.kind === "recurring" && task.recurrence) {
-      items.push(h("span", { class: "meta" }, icon("repeat", 13), repeatSummary(task.recurrence)));
+    const value = task.values[info.id];
+    if (!hasValue(value)) return null;
+    const labeled = style === "meta" && !info.builtin; // los parámetros propios, como dato, llevan su nombre delante
+
+    if (info.type === "date") {
+      if (!value.date) return null;
+      if (info.id === "planned") {
+        const when = shortDate(value.date, todayString()) + (value.time ? ` ${value.time}` : "");
+        return { text: style === "meta" ? t("meta.planned", { date: when }) : when };
+      }
+      const label = dateLabel(value, todayString());
+      return { text: labeled ? `${info.name}: ${label.text}` : label.text, diff: info.id === "due" || info.id === "date" ? label.diff : null };
     }
-    const planned = task.values.planned;
-    if (active.has("planned") && planned && planned.date) {
-      const when = shortDate(planned.date, today) + (planned.time ? ` ${planned.time}` : "");
-      items.push(h("span", { class: "meta", text: t("meta.planned", { date: when }) }));
+    if (info.type === "select") {
+      const option = optionOf(info, value);
+      if (!option) return null; // la opción ya no existe: se conserva el dato, pero no se enseña
+      if (info.id === "energy") {
+        const bars = Math.max(1, Math.round((selectRank(info, value) / info.options.length) * 3)); // 1 a 3 barras
+        return style === "meta" ? { text: `${info.name}: ${option.label}`, bars, color: option.color } : { text: option.label, color: option.color };
+      }
+      return { text: labeled ? `${info.name}: ${option.label}` : option.label, color: option.color };
     }
-    if (active.has("energy") && ENERGY_RANK[task.values.energy]) {
-      items.push(
-        h(
-          "span",
-          {
-            class: "energy",
-            role: "img",
-            "aria-label": `${t("param.energy")}: ${t(`energy.${task.values.energy}`)}`,
-            dataset: { level: ENERGY_RANK[task.values.energy] },
-          },
-          h("i"),
-          h("i"),
-          h("i")
-        )
-      );
-    }
-    for (const info of allParams()) {
-      if (info.builtin || !active.has(info.id)) continue;
-      const value = task.values[info.id];
-      if (value === undefined || value === null || value === "" || value === false) continue;
-      items.push(h("span", { class: "meta", text: value === true ? info.name : `${info.name}: ${formatValue(info, value)}` }));
-    }
-    return items;
+    if (value === true) return { text: info.name };
+    const text = formatValue(info, value);
+    return { text: labeled ? `${info.name}: ${text}` : text };
   }
 
-  function taskElement(task, entering) {
-    const due = dueOf(task);
+  function entryNode(task, info, entry) {
+    const shown = shownValue(task, info, entry.style);
+    if (!shown) return null;
+    if (entry.style === "title") return h("span", { class: "task-name", text: shown.text });
+    if (entry.style === "description") return h("span", { class: "task-desc", text: shown.text });
+    if (entry.style === "badge") {
+      const color = shown.color || entry.color; // en las listas desplegables manda el color de la opción
+      return h("span", { class: "badge", style: `--tag:${color};--tag-ink:${inkFor(color)}`, text: shown.text });
+    }
+    const emphasis = task.done ? "" : shown.diff === 1 ? " meta-tomorrow" : shown.diff < 0 ? " meta-overdue" : "";
+    if (entry.style === "tag") {
+      return h("span", { class: `tag${shown.color ? " has-color" : ""}${emphasis}`, style: shown.color ? `--tag:${shown.color}` : null, text: shown.text });
+    }
+    if (shown.bars) {
+      const props = { class: "energy", role: "img", "aria-label": shown.text, style: shown.color ? `color:${shown.color}` : null, dataset: { level: shown.bars } };
+      return h("span", props, h("i"), h("i"), h("i"));
+    }
+    return h(
+      "span",
+      { class: `meta${emphasis}` },
+      shown.repeat ? icon("repeat", 13) : null,
+      shown.color ? h("span", { class: "dot", style: `--dot:${shown.color}` }) : null,
+      shown.text
+    );
+  }
+
+  function taskElement(task, list, entering) {
+    const infos = new Map(allParams(list.params).map((p) => [p.id, p]));
+    const dueInfo = infos.get(task.kind === "recurring" ? "date" : "due");
+    const due = dueInfo && dueInfo[task.kind] ? dueOf(task) : null;
     const dueLabel = due && due.date ? dateLabel(due, todayString()) : null;
     const tomorrow = !task.done && dueLabel && dueLabel.diff === 1; // las que vencen mañana se resaltan
     const item = h("li", {
@@ -468,21 +589,27 @@
         else if (!task.done && event.target.checked) completeTask(task, item);
       },
     });
-    const meta = metaItems(task, dueLabel);
-    const body = h(
-      "div",
-      { class: "task-body" },
-      h("span", {
-        class: "task-name",
-        text: task.title,
-        onclick: (event) => {
-          event.stopPropagation();
-          openTaskDialogForEdit(task);
-        },
-      }),
-      task.values.description ? h("span", { class: "task-desc", text: task.values.description }) : null,
-      meta.length ? h("div", { class: "task-meta" }, meta) : null
-    );
+
+    // Los parámetros salen en el orden y con el aspecto de la lista.
+    const blocks = [];
+    let row = null;
+    for (const entry of layoutOf(list)) {
+      if (entry.style === "hidden") continue;
+      const node = entryNode(task, infos.get(entry.id), entry);
+      if (!node) continue;
+      if (entry.style === "title" || entry.style === "description") {
+        blocks.push(node);
+        row = null;
+      } else {
+        if (!row) {
+          row = h("div", { class: "task-meta" });
+          blocks.push(row);
+        }
+        row.append(node);
+      }
+    }
+
+    const body = h("div", { class: "task-body", onclick: () => openTaskDialogForEdit(task) }, blocks);
     item.append(h("div", { class: "task-row" }, h("div", { class: "task-content" }, checkbox, body)));
     return item;
   }
@@ -549,7 +676,7 @@
       input.focus();
       return;
     }
-    const missing = paramsFor("once").filter((p) => p.id !== "title" && p.required);
+    const missing = paramsFor(list.params, "once").filter((p) => p.id !== "title" && p.required);
     if (missing.length) {
       openTaskDialog(list, true);
       return;
@@ -587,7 +714,7 @@
   }
 
   function buildCard(list, enteringId) {
-    const pending = sortTasks(state.tasks.filter((x) => x.listId === list.id && !x.done), list.sort);
+    const pending = sortTasks(state.tasks.filter((x) => x.listId === list.id && !x.done), list.sort, list.params);
     const completed = list.showCompleted
       ? state.tasks.filter((x) => x.listId === list.id && x.done).sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0))
       : [];
@@ -607,21 +734,21 @@
         )
       ),
       addRow(list),
-      h("ul", { class: "list" }, pending.map((x) => taskElement(x, x.id === enteringId))),
+      h("ul", { class: "list" }, pending.map((x) => taskElement(x, list, x.id === enteringId))),
       h("p", { class: "card-empty", text: t("task.empty"), hidden: pending.length > 0 }),
       completed.length
         ? h(
           "div",
           { class: "completed" },
           h("h3", { class: "completed-title", text: `${t("task.completed.title")} · ${completed.length}` }),
-          h("ul", { class: "list" }, completed.map((x) => taskElement(x, false)))
+          h("ul", { class: "list" }, completed.map((x) => taskElement(x, list, false)))
         )
         : null
     );
   }
 
   function createList(name) {
-    state.lists.push({ id: uid(), name, hidden: false, showCompleted: false, sort: clone(DEFAULT_SORT) });
+    state.lists.push(makeList({ name, params: state.params })); // empieza con los parámetros por defecto
     saveState();
     renderGrid();
   }
@@ -681,20 +808,50 @@
     return h("div", { class: "list-card list-card-new" }, input);
   }
 
+  // Mismo punto de corte que el CSS: a partir de ahí hay dos columnas.
+  const wide = window.matchMedia("(min-width: 56rem)");
+
+  // Reparte las tarjetas en dos columnas de altura parecida sin cambiar su orden: las primeras van a la
+  // izquierda y el resto a la derecha, en el punto que deja las dos columnas más igualadas (si la primera
+  // lista es tan larga como tres vacías, ella sola va a la izquierda y las demás a la derecha).
+  // El recuadro de "Nueva lista" cuenta como una tarjeta más, la última. En pantallas pequeñas solo hay una
+  // columna y el orden es el mismo.
+  function placeCards(cards) {
+    const [left, right] = $("lists-grid").children;
+    left.replaceChildren(...cards); // primero todas juntas, a la misma anchura que tendrán después
+    right.replaceChildren();
+    if (!wide.matches || cards.length < 2) return;
+
+    const heights = cards.map((card) => card.getBoundingClientRect().height);
+    const gap = parseFloat(getComputedStyle(left).rowGap) || 0;
+    const sum = (from, to) => heights.slice(from, to).reduce((total, height) => total + height, 0) + gap * Math.max(0, to - from - 1);
+
+    let split = 1;
+    let best = Infinity;
+    for (let k = 1; k < cards.length; k++) {
+      const difference = Math.abs(sum(0, k) - sum(k, cards.length));
+      if (difference < best) {
+        best = difference;
+        split = k;
+      }
+    }
+    right.append(...cards.slice(split));
+  }
+
+  // Vuelve a repartir las tarjetas que ya están en pantalla (al cambiar el ancho o cargarse la tipografía).
+  function rebalance() {
+    if (focusedKey) return; // no se mueve nada mientras se escribe
+    placeCards([...$("lists-grid").querySelectorAll(":scope > .lists-col > *")]);
+  }
+
   function renderGrid(enteringId) {
     rendering = true;
     const restore = focusedKey;
     inputs.clear();
     newListInput = null;
-    const cards = visibleLists().map((list) => buildCard(list, enteringId));
-    // Dos columnas: la primera mitad de las listas a la izquierda (de arriba abajo) y el resto a la derecha,
-    // sin huecos entre unas y otras. El recuadro de "Nueva lista" va al final de la columna derecha.
-    // En pantallas pequeñas las columnas se funden y queda una sola lista por fila, en el mismo orden.
-    const half = Math.ceil(cards.length / 2);
-    $("lists-grid").replaceChildren(
-      h("div", { class: "lists-col" }, cards.slice(0, half)),
-      h("div", { class: "lists-col" }, cards.slice(half), newListCard())
-    );
+    const cards = [...visibleLists().map((list) => buildCard(list, enteringId)), newListCard()];
+    $("lists-grid").replaceChildren(h("div", { class: "lists-col" }), h("div", { class: "lists-col" }));
+    placeCards(cards);
     rendering = false;
 
     const el = restore === NEW_KEY ? newListInput : restore ? inputs.get(restore) : null;
@@ -710,6 +867,7 @@
      y se avisa de cuál es.
      ------------------------------------------------------------------------ */
   let draft = null; // { listId, kind, values, recurrence, showErrors, editingTaskId }
+  const draftParams = () => listById(draft.listId).params; // los parámetros de la lista de la tarea
 
   const isEmptyValue = (info, v) => {
     if (info.type === "date") return !(v && v.date);
@@ -723,7 +881,7 @@
     return isEmptyValue(info, draft.values[info.id]);
   }
 
-  const missingParams = () => paramsFor(draft.kind).filter((p) => p.id !== "title" && isMissing(p));
+  const missingParams = () => paramsFor(draftParams(), draft.kind).filter((p) => p.id !== "title" && isMissing(p));
   const titleEmpty = () => !(draft.values.title || "").trim();
 
   // Sin título la tarea se descarta: se avisa en rojo mientras esté vacío. Si faltan parámetros obligatorios, se dice cuáles.
@@ -875,7 +1033,7 @@
       }
       group.append(label(), h("input", props));
     } else if (info.type === "select") {
-      const options = [{ value: "", label: t("field.none") }, ...(info.options || []).map((o) => ({ value: o, label: optionLabel(info, o) }))];
+      const options = [{ value: "", label: t("field.none") }, ...(info.options || []).map((o) => ({ value: o.id, label: o.label, color: o.color }))];
       group.append(label("div"), dropdown({ value: value || "", options, label: info.name, onChange: store }));
     } else if (info.type === "checkbox") {
       group.append(h("label", { class: "check-row" }, h("input", { type: "checkbox", checked: Boolean(value), onchange: (e) => store(e.target.checked) }), info.name));
@@ -888,14 +1046,14 @@
   }
 
   function renderTaskFields() {
-    $("task-fields").replaceChildren(...paramsFor(draft.kind).map(buildField));
+    $("task-fields").replaceChildren(...paramsFor(draftParams(), draft.kind).map(buildField));
     refreshTaskError();
   }
 
   function renderTaskDialog() {
-    if (!recurringAvailable()) draft.kind = "once";
+    if (!recurringAvailable(draftParams()) && !draft.editingTaskId) draft.kind = "once"; // al editar una recurrente no se convierte
     $("task-kind").replaceChildren(
-      ...(recurringAvailable()
+      ...(recurringAvailable(draftParams())
         ? [
           segmented({
             label: t("task.kind.label"),
@@ -962,7 +1120,7 @@
   function taskFromDraft() {
     const kind = draft.kind;
     const values = {};
-    for (const info of paramsFor(kind)) {
+    for (const info of paramsFor(draftParams(), kind)) {
       if (info.id === "title" || info.id === "repeat") continue;
       const v = draft.values[info.id];
       if (isEmptyValue(info, v)) continue;
@@ -1057,19 +1215,28 @@
   }
 
   /* ------------------------------------------------------------------------
-     Ajustes: un menú con dos apartados (parámetros de las tareas y listas)
+     Ajustes: un menú con tres apartados (parámetros por defecto, listas y acerca de)
+     Los controles de parámetros sirven para los de por defecto (los que reciben las listas nuevas) y para
+     los de cada lista (en sus opciones). Cada ámbito ("scope") edita solo los suyos.
      ------------------------------------------------------------------------ */
-  let settingsView = null; // null (menú), "params" o "lists"
-  let paramForm = null; // formulario de "Añadir parámetro" (null = cerrado)
-  const newParamForm = () => ({ name: "", type: "text", options: "", once: true, recurring: true, required: false, error: false });
+  let settingsView = null; // null (menú), "params", "lists" o "about"
+  const blankOption = (n = 0) => ({ id: uid(), label: "", color: PALETTE[n % PALETTE.length] });
+  const newParamForm = () => ({ name: "", type: "text", options: [blankOption()], once: true, recurring: true, required: false, error: false, editId: null, builtin: false });
+  const settingsScope = { list: null, form: null, rerender: () => renderSettings() };
+  const listScope = { list: null, form: null, rerender: () => renderListDialog() };
+  const scopeParams = (scope) => (scope.list ? scope.list.params : state.params);
+  const setScopeParams = (scope, params) => {
+    if (scope.list) scope.list.params = params;
+    else state.params = params;
+  };
 
-  function afterParamsChange() {
+  function afterParamsChange(scope) {
     saveState();
     renderGrid();
-    if ($("task-dialog").open && draft) renderTaskFields();
+    if (scope.list && $("task-dialog").open && draft && draft.listId === scope.list.id) renderTaskFields();
   }
 
-  function paramCheck(p, info, field, label) {
+  function paramCheck(scope, p, info, field, label) {
     if (field !== "required" && !info.kinds.includes(field)) return h("span", { class: "param-na", "aria-hidden": "true", text: "–" });
     const fixed = field === "required" ? info.fixedRequired : info.locked;
     return h("input", {
@@ -1080,20 +1247,33 @@
       "aria-label": `${info.name}: ${label}`,
       onchange: (event) => {
         p[field] = event.target.checked;
-        afterParamsChange();
+        afterParamsChange(scope);
       },
     });
   }
 
-  function paramRow(p) {
+  function paramRow(scope, p) {
     const info = paramInfo(p);
+    // Se pueden editar pulsando su nombre: los propios (nombre y opciones) y la energía (sus opciones).
+    const name = info.builtin && info.type !== "select"
+      ? h("span", { text: info.name })
+      : h("button", {
+        class: "param-edit",
+        type: "button",
+        text: info.name,
+        "aria-label": `${t("param.edit")}: ${info.name}`,
+        onclick: () => {
+          scope.form = { ...newParamForm(), name: info.name, type: info.type, options: (info.options || []).map((o) => ({ ...o })), editId: p.id, builtin: info.builtin };
+          scope.rerender();
+        },
+      });
     return h(
       "div",
       { class: "param-row" },
-      h("div", { class: "param-name" }, h("span", { text: info.name }), h("small", { text: t(`type.${info.type}`) })),
-      h("div", { class: "param-cell" }, paramCheck(p, info, "once", t("kind.once"))),
-      h("div", { class: "param-cell" }, paramCheck(p, info, "recurring", t("kind.recurring"))),
-      h("div", { class: "param-cell" }, paramCheck(p, info, "required", t("param.required"))),
+      h("div", { class: "param-name" }, name, h("small", { text: t(`type.${info.type}`) })),
+      h("div", { class: "param-cell" }, paramCheck(scope, p, info, "once", t("kind.once"))),
+      h("div", { class: "param-cell" }, paramCheck(scope, p, info, "recurring", t("kind.recurring"))),
+      h("div", { class: "param-cell" }, paramCheck(scope, p, info, "required", t("param.required"))),
       info.locked
         ? h("span")
         : h(
@@ -1103,9 +1283,9 @@
             type: "button",
             "aria-label": `${t("param.remove")}: ${info.name}`,
             onclick: () => {
-              state.params = state.params.filter((x) => x.id !== p.id); // los datos de las tareas se conservan
-              afterParamsChange();
-              renderSettings();
+              setScopeParams(scope, scopeParams(scope).filter((x) => x.id !== p.id)); // los datos de las tareas se conservan
+              afterParamsChange(scope);
+              scope.rerender();
             },
           },
           icon("trash", 16)
@@ -1114,37 +1294,135 @@
   }
 
   // Vuelve a poner un parámetro predefinido que se quitó, en su sitio.
-  function restoreParam(id) {
+  function restoreParam(scope, id) {
+    const params = scopeParams(scope);
     const def = DEFAULT_PARAMS.find((p) => p.id === id);
-    if (!def || hasParam(id)) return;
+    if (!def || hasParam(params, id)) return;
     const order = DEFAULT_PARAMS.map((p) => p.id);
     const later = order.slice(order.indexOf(id) + 1);
-    const at = state.params.findIndex((p) => later.includes(p.id));
-    if (at === -1) state.params.push({ ...def });
-    else state.params.splice(at, 0, { ...def });
-    afterParamsChange();
-    renderSettings();
+    const at = params.findIndex((p) => later.includes(p.id));
+    if (at === -1) params.push({ ...def });
+    else params.splice(at, 0, { ...def });
+    afterParamsChange(scope);
+    scope.rerender();
   }
 
-  function paramFormElement() {
-    const f = paramForm;
-    const options = h("input", {
-      class: "field",
-      type: "text",
-      maxlength: 200,
-      placeholder: t("param.options"),
-      "aria-label": t("param.options"),
-      value: f.options,
-      hidden: f.type !== "select",
-      oninput: (event) => (f.options = event.target.value),
-    });
+  // Editor de las opciones de una lista desplegable: una fila por opción, con su color, su nombre,
+  // un botón para subirla y otro para quitarla. Enter en un nombre abre otra opción debajo.
+  function optionsEditor(f) {
+    const host = h("div", { class: "options-editor", role: "group", "aria-label": t("param.options"), hidden: f.type !== "select" });
+    let open = -1; // opción con la paleta de colores abierta
+    let focusAt = -1; // opción que recibe el cursor tras dibujar
+
+    const add = (at) => {
+      f.options.splice(at, 0, blankOption(f.options.length));
+      open = -1;
+      focusAt = at;
+      paint();
+    };
+
+    function paint() {
+      host.replaceChildren(
+        ...f.options.map((option, i) =>
+          h(
+            "div",
+            { class: "option-item" },
+            h(
+              "div",
+              { class: "option-row" },
+              h("button", {
+                type: "button",
+                class: "swatch",
+                style: `--swatch:${option.color}`,
+                "aria-label": `${t("layout.color")}: ${option.label || i + 1}`,
+                "aria-expanded": String(open === i),
+                onclick: () => {
+                  open = open === i ? -1 : i;
+                  paint();
+                },
+              }),
+              h("input", {
+                class: "field",
+                type: "text",
+                maxlength: 30,
+                value: option.label,
+                placeholder: t("option.placeholder"),
+                "aria-label": t("option.label"),
+                oninput: (event) => (option.label = event.target.value),
+                onkeydown: (event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    add(i + 1);
+                  }
+                },
+              }),
+              i > 0
+                ? h(
+                  "button",
+                  {
+                    class: "icon-btn small",
+                    type: "button",
+                    "aria-label": t("option.up"),
+                    onclick: () => {
+                      [f.options[i - 1], f.options[i]] = [f.options[i], f.options[i - 1]];
+                      open = -1;
+                      paint();
+                    },
+                  },
+                  icon("up", 16)
+                )
+                : h("span"),
+              h(
+                "button",
+                {
+                  class: "icon-btn small",
+                  type: "button",
+                  disabled: f.options.length === 1,
+                  "aria-label": t("option.remove"),
+                  onclick: () => {
+                    f.options.splice(i, 1);
+                    open = -1;
+                    paint();
+                  },
+                },
+                icon("close", 16)
+              )
+            ),
+            open === i
+              ? colorPicker(option.color, (color) => {
+                option.color = color;
+                open = -1;
+                paint();
+              })
+              : null
+          )
+        ),
+        h("button", { class: "text-btn", type: "button", text: t("option.add"), onclick: () => add(f.options.length) })
+      );
+      if (focusAt >= 0) {
+        const input = host.querySelectorAll(".option-row input")[focusAt];
+        focusAt = -1;
+        if (input) input.focus();
+      }
+    }
+
+    paint();
+    return host;
+  }
+
+  // Formulario para añadir un parámetro propio o, si trae "editId", para cambiar uno: el nombre (salvo en la
+  // energía) y, en las listas desplegables, sus opciones.
+  function paramFormElement(scope) {
+    const f = scope.form;
+    const editing = Boolean(f.editId);
+    const editor = optionsEditor(f);
     const typeSelect = dropdown({
       value: f.type,
       label: t("param.type"),
       options: TYPES.map((type) => ({ value: type, label: t(`type.${type}`) })),
       onChange: (type) => {
         f.type = type;
-        options.hidden = type !== "select";
+        editor.hidden = type !== "select";
       },
     });
     const check = (field, text) =>
@@ -1152,71 +1430,92 @@
 
     const submit = () => {
       const name = f.name.trim();
-      const list = f.type === "select" ? [...new Set(f.options.split(",").map((o) => o.trim()).filter(Boolean))] : [];
-      if (!name || (f.type === "select" && !list.length)) {
+      const params = scopeParams(scope);
+      const target = editing ? params.find((x) => x.id === f.editId) : null;
+      const isEnergy = Boolean(target && target.id === "energy");
+      // Las opciones sin nombre se descartan. En la energía, un nombre sin cambiar sigue siendo el traducido.
+      const list =
+        f.type === "select"
+          ? f.options
+            .map((o) => ({ id: o.id, label: o.label.trim(), color: o.color }))
+            .filter((o) => o.label)
+            .map((o) => (isEnergy && o.label === t(`energy.${o.id}`) ? { id: o.id, color: o.color } : o))
+          : [];
+      if ((!f.builtin && !name) || (f.type === "select" && !list.length)) {
         f.error = true;
-        renderSettings();
+        scope.rerender();
         return;
       }
-      const param = { id: uid(), type: f.type, name, once: f.once, recurring: f.recurring, required: f.required };
-      if (f.type === "select") param.options = list;
-      state.params.push(param);
-      paramForm = null;
-      afterParamsChange();
-      renderSettings();
+      if (editing) {
+        if (target) {
+          if (!f.builtin) target.name = name;
+          if (target.type === "select" || isEnergy) target.options = list;
+        }
+      } else {
+        const param = { id: uid(), type: f.type, name, once: f.once, recurring: f.recurring, required: f.required };
+        if (f.type === "select") param.options = list;
+        params.push(param);
+      }
+      scope.form = null;
+      afterParamsChange(scope);
+      scope.rerender();
     };
 
     return h(
       "div",
       { class: "param-form" },
-      h("input", {
-        class: "field",
-        type: "text",
-        maxlength: 40,
-        placeholder: t("param.name"),
-        "aria-label": t("param.name"),
-        value: f.name,
-        oninput: (event) => (f.name = event.target.value),
-        onkeydown: (event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            submit();
-          }
-        },
-      }),
-      typeSelect,
-      options,
-      h("div", { class: "check-group" }, check("once", t("kind.once")), check("recurring", t("kind.recurring")), check("required", t("param.required"))),
+      f.builtin
+        ? null
+        : h("input", {
+          class: "field",
+          type: "text",
+          maxlength: 40,
+          placeholder: t("param.name"),
+          "aria-label": t("param.name"),
+          value: f.name,
+          oninput: (event) => (f.name = event.target.value),
+          onkeydown: (event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              submit();
+            }
+          },
+        }),
+      editing ? null : typeSelect,
+      editor,
+      editing ? null : h("div", { class: "check-group" }, check("once", t("kind.once")), check("recurring", t("kind.recurring")), check("required", t("param.required"))),
       f.error ? h("p", { class: "form-error", role: "alert", text: t("param.error") }) : null,
       h(
         "div",
         { class: "form-actions" },
-        h("button", { class: "primary-btn", type: "button", text: t("param.create"), onclick: submit }),
+        h("button", { class: "primary-btn", type: "button", text: editing ? t("task.saveButton") : t("param.create"), onclick: submit }),
         h("button", {
           class: "text-btn",
           type: "button",
           text: t("param.cancel"),
           onclick: () => {
-            paramForm = null;
-            renderSettings();
+            scope.form = null;
+            scope.rerender();
           },
         })
       )
     );
   }
 
-  function paramsSection() {
+  // Tabla de parámetros: la de por defecto (Ajustes) o la de una lista (sus opciones).
+  function paramsSection(scope) {
+    const params = scopeParams(scope);
     const grid = h("div", { class: "param-grid", role: "group", "aria-label": t("settings.params") });
     grid.append(
       h("div", { class: "param-row param-header" }, h("span"), ...["col.once", "col.recurring", "col.required"].map((key) => h("span", { text: t(key) })), h("span"))
     );
-    for (const p of state.params) grid.append(paramRow(p));
+    for (const p of params) grid.append(paramRow(scope, p));
 
-    const removed = DEFAULT_PARAMS.filter((d) => !hasParam(d.id));
+    const removed = DEFAULT_PARAMS.filter((d) => !hasParam(params, d.id));
     return h(
       "section",
       { class: "settings-section" },
-      h("p", { class: "settings-hint", text: t("settings.params.hint") }),
+      h("p", { class: "settings-hint", text: t(scope.list ? "list.params.hint" : "settings.params.hint") }),
       grid,
       removed.length
         ? h(
@@ -1226,19 +1525,19 @@
           h(
             "div",
             { class: "chip-row" },
-            removed.map((d) => h("button", { class: "chip", type: "button", onclick: () => restoreParam(d.id) }, icon("plus", 14), t(`param.${d.id}`)))
+            removed.map((d) => h("button", { class: "chip", type: "button", onclick: () => restoreParam(scope, d.id) }, icon("plus", 14), t(`param.${d.id}`)))
           )
         )
         : null,
-      paramForm
-        ? paramFormElement()
+      scope.form
+        ? paramFormElement(scope)
         : h("button", {
           class: "text-btn",
           type: "button",
           text: t("param.add"),
           onclick: () => {
-            paramForm = newParamForm();
-            renderSettings();
+            scope.form = newParamForm();
+            scope.rerender();
           },
         })
     );
@@ -1382,6 +1681,13 @@
         titleKey: "about.versions.v005.title",
         bodyKey: "about.versions.v005.body",
         openByDefault: false
+      },
+      {
+        versionKey: "about.versions.v006.label",
+        dateKey: "about.versions.v006.date",
+        titleKey: "about.versions.v006.title",
+        bodyKey: "about.versions.v006.body",
+        openByDefault: false
       }
     ];
 
@@ -1486,7 +1792,7 @@
 
     $("settings-body").replaceChildren(
       settingsView === "params"
-        ? paramsSection()
+        ? paramsSection(settingsScope)
         : settingsView === "lists"
           ? listsSection()
           : settingsView === "about"
@@ -1496,14 +1802,18 @@
   }
 
   /* ------------------------------------------------------------------------
-     Ventana de una lista: nombre, orden, tareas completadas, ocultar y eliminar
+     Ventana de una lista: nombre y, en tres apartados, sus parámetros, su aspecto y su orden.
+     Además: tareas completadas, ocultar y eliminar
      ------------------------------------------------------------------------ */
   let editingListId = null;
   let deleteArmed = false;
+  let listTab = "params"; // "params", "layout" o "sort"
 
   function openListDialog(id) {
     editingListId = id;
     deleteArmed = false;
+    listTab = "params";
+    listScope.form = null;
     renderListDialog();
     Flucti.openDialog($("list-dialog"));
   }
@@ -1585,13 +1895,119 @@
     if ($("settings-dialog").open) renderSettings();
   }
 
-  function renderListDialog() {
-    const list = state.lists.find((l) => l.id === editingListId);
-    if (!list) return;
-    const criteria = sortCriteria();
+  // Orden de las tareas de la lista.
+  function sortSection(list) {
+    const criteria = sortCriteria(list.params);
     // los criterios de parámetros que ya no existen se saltan (se conservan por si el parámetro vuelve)
     const rules = list.sort.filter((r) => criteria.some((c) => c.id === r.by));
     const unused = criteria.find((c) => !rules.some((r) => r.by === c.id));
+    return h(
+      "section",
+      { class: "settings-section" },
+      h("p", { class: "settings-hint", text: t("list.sort.hint") }),
+      ...rules.map((_, i) => sortRow(list, rules, i, criteria)),
+      unused
+        ? h("button", {
+          class: "text-btn",
+          type: "button",
+          text: t("sort.add"),
+          onclick: () => {
+            list.sort.push({ by: unused.id, dir: defaultDirection(unused.kind) });
+            saveState();
+            renderGrid();
+            renderListDialog();
+          },
+        })
+        : null
+    );
+  }
+
+  // Paleta de colores: unos cuantos fijos y uno libre. onPick recibe el color elegido.
+  function colorPicker(color, onPick) {
+    const current = color.toLowerCase();
+    return h(
+      "div",
+      { class: "swatches", role: "group", "aria-label": t("layout.color") },
+      PALETTE.map((preset) =>
+        h("button", {
+          type: "button",
+          class: `swatch${current === preset ? " is-selected" : ""}`,
+          style: `--swatch:${preset}`,
+          "aria-label": `${t("layout.color")} ${preset}`,
+          "aria-pressed": String(current === preset),
+          onclick: () => onPick(preset),
+        })
+      ),
+      h("input", {
+        type: "color",
+        class: `swatch swatch-custom${PALETTE.includes(current) ? "" : " is-selected"}`,
+        value: color,
+        "aria-label": t("layout.color.custom"),
+        onchange: (event) => onPick(event.target.value),
+      })
+    );
+  }
+
+  // Aspecto de los parámetros en las tareas de la lista: cómo se ve cada uno y en qué orden.
+  function layoutSection(list) {
+    const entries = layoutOf(list);
+    const changed = () => {
+      saveState();
+      renderGrid();
+      renderListDialog();
+    };
+    const move = (index, by) => {
+      const a = list.layout.indexOf(entries[index]);
+      const b = list.layout.indexOf(entries[index + by]);
+      [list.layout[a], list.layout[b]] = [list.layout[b], list.layout[a]];
+      changed();
+    };
+
+    return h(
+      "section",
+      { class: "settings-section" },
+      h("p", { class: "settings-hint", text: t("list.layout.hint") }),
+      entries.map((entry, i) => {
+        const info = paramById(list.params, entry.id);
+        const options = STYLES.filter((style) => !(style === "hidden" && info.locked)).map((style) => ({ value: style, label: t(`style.${style}`) }));
+        const arrow = (by, name, glyph) =>
+          (by < 0 ? i > 0 : i < entries.length - 1)
+            ? h("button", { class: "icon-btn small", type: "button", "aria-label": `${t(name)}: ${info.name}`, onclick: () => move(i, by) }, icon(glyph, 16))
+            : h("span");
+        return h(
+          "div",
+          { class: "layout-row" },
+          h(
+            "div",
+            { class: "layout-head" },
+            h("span", { class: "layout-name", text: info.name }),
+            dropdown({
+              value: entry.style,
+              label: `${t("layout.style")}: ${info.name}`,
+              options,
+              onChange: (style) => {
+                entry.style = style;
+                changed();
+              },
+            }),
+            arrow(-1, "layout.up", "up"),
+            arrow(1, "layout.down", "chevronDown")
+          ),
+          entry.style === "badge" && info.type !== "select" // en las listas desplegables el color lo da cada opción
+            ? colorPicker(entry.color, (color) => {
+              entry.color = color;
+              changed();
+            })
+            : null
+        );
+      })
+    );
+  }
+
+  function renderListDialog() {
+    const list = state.lists.find((l) => l.id === editingListId);
+    if (!list) return;
+    listScope.list = list;
     const onlyVisible = !list.hidden && visibleLists().length === 1;
 
     const nameInput = h("input", {
@@ -1616,28 +2032,32 @@
       },
     });
 
+    const tabs = segmented({
+      label: t("list.tabs"),
+      options: [
+        { value: "params", label: t("list.tab.params") },
+        { value: "layout", label: t("list.tab.layout") },
+        { value: "sort", label: t("list.tab.sort") },
+      ],
+      value: listTab,
+      onChange: (tab) => {
+        listTab = tab;
+        listScope.form = null;
+        renderListDialog();
+      },
+    });
+
+    const section =
+      listTab === "layout"
+        ? layoutSection(list)
+        : listTab === "sort"
+          ? sortSection(list)
+          : h("section", { class: "settings-section" }, paramsSection(listScope));
+
     $("list-body").replaceChildren(
       h("div", { class: "field-group" }, h("label", { class: "field-label", for: "list-name-input", text: t("list.name") }), nameInput),
-      h(
-        "section",
-        { class: "settings-section" },
-        h("h3", { class: "settings-heading", text: t("list.sort") }),
-        h("p", { class: "settings-hint", text: t("list.sort.hint") }),
-        ...rules.map((_, i) => sortRow(list, rules, i, criteria)),
-        unused
-          ? h("button", {
-            class: "text-btn",
-            type: "button",
-            text: t("sort.add"),
-            onclick: () => {
-              list.sort.push({ by: unused.id, dir: defaultDirection(unused.kind) });
-              saveState();
-              renderGrid();
-              renderListDialog();
-            },
-          })
-          : null
-      ),
+      h("div", { class: "list-tabs" }, tabs),
+      section,
       h(
         "div",
         { class: "check-group stacked" },
@@ -1706,13 +2126,13 @@
 
   $("menu-btn").addEventListener("click", () => {
     settingsView = null;
-    paramForm = null;
+    settingsScope.form = null;
     renderSettings();
     Flucti.openDialog(settingsDialog);
   });
   $("settings-back").addEventListener("click", () => {
     settingsView = null;
-    paramForm = null;
+    settingsScope.form = null;
     renderSettings();
   });
   $("settings-close").addEventListener("click", () => settingsDialog.close());
@@ -1752,6 +2172,21 @@
     if (!document.hidden) refresh();
   });
 
+  // Al cambiar el ancho o cargarse la tipografía cambia la altura de las tarjetas: se vuelven a repartir.
+  let gridWidth = 0;
+  let frame = 0;
+  window.addEventListener("resize", () => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => {
+      const width = $("lists-grid").clientWidth;
+      if (width === gridWidth) return;
+      gridWidth = width;
+      rebalance();
+    });
+  });
+  wide.addEventListener("change", rebalance);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(rebalance);
+
   saveState();
   renderGrid();
 
@@ -1765,5 +2200,7 @@
     normalizeState,
     repeatSummary,
     renderGrid,
+    layoutOf,
+    makeList,
   };
 })();

@@ -1606,3 +1606,183 @@ input[type="number"]::-webkit-outer-spin-button {
   font-size: 0.95rem;
   font-weight: 600;
 }
+
+/* 16. Etiquetas y aspecto de los parámetros -------------------------------- */
+.task-body {
+  cursor: pointer;
+}
+
+/* Etiqueta: palabra con contorno. Etiqueta de color: rellena del color elegido en la lista. */
+.tag,
+.badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0.08rem 0.6rem;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  border-radius: 999px;
+}
+
+.tag {
+  color: var(--ink);
+  border: 1px solid color-mix(in srgb, var(--ink) 28%, transparent);
+}
+
+.badge {
+  font-weight: 600;
+  color: var(--tag-ink, #fff);
+  background: var(--tag, var(--accent));
+}
+
+.tag.meta-tomorrow {
+  color: var(--accent);
+  border-color: currentColor;
+}
+
+.list-tabs {
+  display: block;
+}
+
+#list-body > .list-tabs + * {
+  margin-top: var(--space-m);
+}
+
+.layout-row {
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.layout-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 2rem 2rem;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.layout-name {
+  overflow-wrap: anywhere;
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.7rem;
+}
+
+.swatch {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  background: var(--swatch);
+  border: 0;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 15%, transparent);
+  cursor: pointer;
+  transition: box-shadow 0.15s var(--ease);
+}
+
+.swatch.is-selected {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--ink);
+}
+
+/* Selector de color libre: un círculo con los colores del arco iris hasta que se elige uno */
+.swatch-custom {
+  background: conic-gradient(#dc2626, #ca8a04, #16a34a, #0d9488, #2563eb, #c026d3, #dc2626);
+}
+
+.swatch-custom::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.swatch-custom::-webkit-color-swatch {
+  border: 0;
+  border-radius: 50%;
+  opacity: 0;
+}
+
+.swatch-custom::-moz-color-swatch {
+  border: 0;
+  border-radius: 50%;
+  opacity: 0;
+}
+
+.swatch-custom.is-selected::-webkit-color-swatch,
+.swatch-custom.is-selected::-moz-color-swatch {
+  opacity: 1;
+}
+
+/* Nombre de un parámetro propio: se pulsa para editarlo */
+.param-edit {
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.param-edit:hover {
+  text-decoration: underline;
+}
+
+
+/* 17. Opciones de las listas desplegables: color por opción ---------------- */
+.dot,
+.option-dot {
+  flex: none;
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  background: var(--dot);
+  border-radius: 50%;
+}
+
+.option-dot {
+  margin-right: 0.5rem;
+}
+
+.dropdown-button .option-dot {
+  margin-right: 0;
+}
+
+.option-dot[hidden],
+.options-editor[hidden] {
+  display: none;
+}
+
+.tag.has-color {
+  color: color-mix(in srgb, var(--tag) 70%, var(--ink));
+  border-color: var(--tag);
+}
+
+.options-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.option-row {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr) 2rem 2rem;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.option-row .field {
+  background: var(--surface);
+}
+
+.options-editor .swatches {
+  margin: 0.1rem 0 0.25rem 0;
+}
+
+.options-editor .text-btn {
+  align-self: flex-start;
+}
