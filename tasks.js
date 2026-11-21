@@ -5,9 +5,11 @@
 
    Datos (localStorage "flucti:data:v1"):
      params: parámetros por defecto: los que reciben las listas nuevas
-     lists:  listas { id, name, hidden, showCompleted, sort, params, layout }; name null = nombre por defecto ("Actual")
+     lists:  listas { id, name, hidden, showCompleted, sort, params, layout, highlight }; name null = nombre por defecto ("Actual")
              params: los parámetros de esa lista (cada una tiene los suyos)
              layout: cómo se ve cada parámetro en la lista y en qué orden { id, style, color }
+             highlight: qué tareas se resaltan { match, color, blink, conditions: [{ param, op, value }] }
+             (el orden del array es el orden en que se ven las listas)
      tasks:  tareas { id, listId, kind, title, values, recurrence, done, completedAt, createdAt }
 
    Norma: ninguna actualización borra las tareas guardadas. Al cambiar el formato de los datos se
@@ -15,7 +17,7 @@
    ========================================================================== */
 (() => {
   const { t, tn } = I18n;
-  const { h, icon, uid, clone, dates, segmented, dropdown, datePicker, timePicker } = UI;
+  const { h, icon, uid, clone, dates, segmented, dropdown, datePicker, timePicker, richEditor, richHtml, richPlain } = UI;
   const { toDateString, parseDateString, diffDays, todayString, addDays, addMonths, WEEK_ORDER, weekdayName } = dates;
   const $ = (id) => document.getElementById(id);
 
@@ -85,6 +87,19 @@
     { by: "energy", dir: "desc" }, // y, a igual fecha, las que más energía suponen
   ];
 
+  // Resaltado: las tareas que cumplen las condiciones se pintan de un color (o parpadean). Por defecto, las que vencen mañana.
+  // color: "auto" (el del tema) o un color #rrggbb. match: "all" (todas las condiciones) o "any" (alguna).
+  const DEFAULT_HIGHLIGHT = { match: "all", color: "auto", blink: false, conditions: [{ param: "due", op: "inDays", value: 1 }] };
+  const HL_OPS = {
+    date: ["overdue", "today", "inDays", "withinDays", "empty", "notEmpty"],
+    select: ["is", "isNot", "empty", "notEmpty"],
+    text: ["contains", "empty", "notEmpty"],
+    number: ["gt", "lt", "eq", "empty", "notEmpty"],
+    checkbox: ["checked", "unchecked"],
+  };
+  const HL_NEEDS = { inDays: "number", withinDays: "number", is: "select", isNot: "select", contains: "text", gt: "number", lt: "number", eq: "number" };
+  const hlGroup = (type) => (type === "textarea" ? "text" : type);
+
   // Cómo se ve un parámetro en las tareas de una lista: título, descripción, dato (texto pequeño),
   // etiqueta (palabra con contorno), etiqueta de color (rellena) u oculto.
   const STYLES = ["title", "description", "meta", "tag", "badge", "hidden"];
@@ -112,6 +127,7 @@
       sort: clone(DEFAULT_SORT),
       params: clone(params),
       layout: params.map((p) => ({ id: p.id, style: defaultStyle(p.id), color: DEFAULT_COLOR })),
+      highlight: clone(DEFAULT_HIGHLIGHT),
     };
   }
 
@@ -189,6 +205,16 @@
     return layout;
   }
 
+  // Resaltado guardado de una lista; las listas anteriores a esta función empiezan con el resaltado por defecto.
+  function normalizeHighlight(raw) {
+    if (!raw || typeof raw !== "object") return clone(DEFAULT_HIGHLIGHT);
+    const ops = new Set(Object.values(HL_OPS).flat());
+    const conditions = (Array.isArray(raw.conditions) ? raw.conditions : [])
+      .filter((c) => c && typeof c.param === "string" && ops.has(c.op))
+      .map((c) => ({ param: c.param, op: c.op, value: c.value === undefined || c.value === null ? "" : c.value }));
+    return { match: raw.match === "any" ? "any" : "all", color: isColor(raw.color) ? raw.color : "auto", blink: raw.blink === true, conditions };
+  }
+
   // Aspecto de los parámetros de la lista, en el orden en que se ven. Los parámetros que aún no tienen
   // aspecto se añaden al final; los de parámetros quitados se conservan (por si el parámetro vuelve) pero no salen.
   function layoutOf(list) {
@@ -218,6 +244,7 @@
         // Las listas guardadas antes de tener parámetros propios conservan los que había.
         params: Array.isArray(l.params) ? normalizeParams(l.params) : clone(params),
         layout: normalizeLayout(l.layout),
+        highlight: normalizeHighlight(l.highlight),
       }));
     if (!lists.length) lists.push(base.lists[0]);
     if (lists.every((l) => l.hidden)) lists[0].hidden = false;
@@ -410,6 +437,7 @@
         if (info.type === "date") return dateKey(v);
         if (info.type === "select") return selectRank(info, v);
         if (info.type === "checkbox") return v ? 1 : 0;
+        if (info.type === "textarea") return richPlain(v);
         return String(v);
       }
     }
@@ -494,6 +522,84 @@
     rec.mode === "weekdays" ? rec.days.length > 0 : Number.isInteger(rec.every) && rec.every >= 1 && rec.every <= 999;
 
   /* ------------------------------------------------------------------------
+     Resaltado: cada lista dice qué tareas se resaltan con condiciones sobre sus parámetros
+     ------------------------------------------------------------------------ */
+  // Parámetros que se pueden usar en una condición (el vencimiento y la fecha de las recurrentes cuentan como uno).
+  function highlightParams(params) {
+    const out = [];
+    for (const p of allParams(params)) {
+      if (p.id === "repeat") continue;
+      if (p.id === "date") {
+        if (!hasParam(params, "due")) out.push({ ...p, id: "due", name: t("param.due") });
+        continue;
+      }
+      out.push(p);
+    }
+    return out;
+  }
+
+  const rawValue = (task, id) => (id === "title" ? task.title : id === "due" ? dueOf(task) : task.values[id]);
+
+  function defaultConditionValue(op, info) {
+    if (op === "inDays" || op === "withinDays") return 1;
+    if (HL_NEEDS[op] === "select") return ((info && info.options) || [])[0]?.id ?? "";
+    if (HL_NEEDS[op] === "number") return 0;
+    return "";
+  }
+
+  function conditionMet(task, cond, info) {
+    const raw = rawValue(task, cond.param);
+    const type = info.type;
+    const empty =
+      type === "date" ? !(raw && raw.date)
+        : type === "checkbox" ? !raw
+          : type === "textarea" ? richPlain(raw) === ""
+            : raw === undefined || raw === null || String(raw).trim() === "";
+    switch (cond.op) {
+      case "empty": return empty;
+      case "notEmpty": return !empty;
+      case "checked": return raw === true;
+      case "unchecked": return raw !== true;
+      case "isNot": if (empty) return true; break;
+      default:
+    }
+    if (empty) return false;
+    if (HL_NEEDS[cond.op] && String(cond.value ?? "").trim() === "") return false; // condición a medio escribir
+
+    if (type === "date") {
+      const diff = diffDays(raw.date, todayString());
+      const n = Number(cond.value);
+      if (cond.op === "overdue") return diff < 0;
+      if (cond.op === "today") return diff === 0;
+      if (cond.op === "inDays") return diff === n;
+      if (cond.op === "withinDays") return diff >= 0 && diff <= n;
+      return false;
+    }
+    if (type === "select") return cond.op === "is" ? raw === cond.value : cond.op === "isNot" ? raw !== cond.value : false;
+    if (type === "number") {
+      const a = Number(raw);
+      const n = Number(cond.value);
+      return cond.op === "gt" ? a > n : cond.op === "lt" ? a < n : cond.op === "eq" ? a === n : false;
+    }
+    if (cond.op === "contains") {
+      const text = type === "textarea" ? richPlain(raw) : String(raw);
+      return text.toLowerCase().includes(String(cond.value).trim().toLowerCase());
+    }
+    return false;
+  }
+
+  // El resaltado de la lista si la tarea cumple sus condiciones (las de parámetros quitados no cuentan), o null.
+  function highlightOf(task, list) {
+    const hl = list.highlight;
+    if (task.done || !hl) return null;
+    const infos = new Map(highlightParams(list.params).map((p) => [p.id, p]));
+    const active = hl.conditions.filter((c) => infos.has(c.param));
+    if (!active.length) return null;
+    const test = (c) => conditionMet(task, c, infos.get(c.param));
+    return (hl.match === "any" ? active.some(test) : active.every(test)) ? hl : null;
+  }
+
+  /* ------------------------------------------------------------------------
      Tareas en pantalla
      Cada lista decide cómo se ve cada parámetro y en qué orden (list.layout: { id, style, color }):
      título, descripción, dato (texto pequeño), etiqueta, etiqueta de color u oculto.
@@ -538,6 +644,11 @@
       return { text: labeled ? `${info.name}: ${option.label}` : option.label, color: option.color };
     }
     if (value === true) return { text: info.name };
+    if (info.type === "textarea") {
+      const plain = richPlain(value);
+      if (!plain) return null;
+      return { text: labeled ? `${info.name}: ${plain}` : plain, html: richHtml(value) };
+    }
     const text = formatValue(info, value);
     return { text: labeled ? `${info.name}: ${text}` : text };
   }
@@ -546,12 +657,12 @@
     const shown = shownValue(task, info, entry.style);
     if (!shown) return null;
     if (entry.style === "title") return h("span", { class: "task-name", text: shown.text });
-    if (entry.style === "description") return h("span", { class: "task-desc", text: shown.text });
+    if (entry.style === "description") return h("div", { class: "task-desc", html: shown.html, text: shown.html ? null : shown.text });
     if (entry.style === "badge") {
       const color = shown.color || entry.color; // en las listas desplegables manda el color de la opción
       return h("span", { class: "badge", style: `--tag:${color};--tag-ink:${inkFor(color)}`, text: shown.text });
     }
-    const emphasis = task.done ? "" : shown.diff === 1 ? " meta-tomorrow" : shown.diff < 0 ? " meta-overdue" : "";
+    const emphasis = task.done ? "" : shown.diff < 0 ? " meta-overdue" : "";
     if (entry.style === "tag") {
       return h("span", { class: `tag${shown.color ? " has-color" : ""}${emphasis}`, style: shown.color ? `--tag:${shown.color}` : null, text: shown.text });
     }
@@ -570,12 +681,10 @@
 
   function taskElement(task, list, entering) {
     const infos = new Map(allParams(list.params).map((p) => [p.id, p]));
-    const dueInfo = infos.get(task.kind === "recurring" ? "date" : "due");
-    const due = dueInfo && dueInfo[task.kind] ? dueOf(task) : null;
-    const dueLabel = due && due.date ? dateLabel(due, todayString()) : null;
-    const tomorrow = !task.done && dueLabel && dueLabel.diff === 1; // las que vencen mañana se resaltan
+    const hl = highlightOf(task, list); // las tareas que cumplen el resaltado de la lista
     const item = h("li", {
-      class: `task${entering ? " entering" : ""}${tomorrow ? " due-tomorrow" : ""}${task.done ? " is-completed" : ""}`,
+      class: `task${entering ? " entering" : ""}${hl ? ` is-highlighted${hl.blink ? " hl-blink" : ""}` : ""}${task.done ? " is-completed" : ""}`,
+      style: hl ? `--hl:${hl.color === "auto" ? "var(--accent)" : hl.color}` : null,
       dataset: { id: task.id },
     });
 
@@ -713,26 +822,56 @@
     );
   }
 
-  function buildCard(list, enteringId) {
+  // full: la lista a pantalla completa (se abre pulsando su título).
+  function buildCard(list, enteringId, full = false) {
     const pending = sortTasks(state.tasks.filter((x) => x.listId === list.id && !x.done), list.sort, list.params);
     const completed = list.showCompleted
       ? state.tasks.filter((x) => x.listId === list.id && x.done).sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0))
       : [];
 
-    return h(
-      "section",
-      { class: "list-card", dataset: { list: list.id }, "aria-label": listName(list) },
-      h(
+    const count = pending.length ? h("span", { class: "card-count", text: String(pending.length) }) : null;
+    const options = h(
+      "button",
+      { class: "icon-btn", type: "button", "aria-haspopup": "dialog", "aria-label": `${t("list.options")}: ${listName(list)}`, onclick: () => openListDialog(list.id) },
+      icon("dots", 22)
+    );
+    const head = full
+      ? h(
         "header",
         { class: "card-head" },
+        h("button", { class: "icon-btn", type: "button", "aria-label": t("list.back"), onclick: closeFull }, icon("chevronLeft", 22)),
         h("h2", { class: "card-title", text: listName(list) }),
-        pending.length ? h("span", { class: "card-count", text: String(pending.length) }) : null,
+        count,
+        options
+      )
+      : h(
+        "header",
+        { class: "card-head" },
+        h("button", {
+          class: "icon-btn small grip",
+          type: "button",
+          "aria-label": `${t("list.move")}: ${listName(list)}`,
+          onpointerdown: (event) => startDrag(event, list.id),
+          onkeydown: (event) => {
+            const by = { ArrowUp: -1, ArrowLeft: -1, ArrowDown: 1, ArrowRight: 1 }[event.key];
+            if (!by) return;
+            event.preventDefault();
+            moveList(list.id, by);
+          },
+        }, icon("grip", 18)),
         h(
-          "button",
-          { class: "icon-btn", type: "button", "aria-haspopup": "dialog", "aria-label": `${t("list.options")}: ${listName(list)}`, onclick: () => openListDialog(list.id) },
-          icon("dots", 22)
-        )
-      ),
+          "h2",
+          { class: "card-title" },
+          h("button", { class: "card-title-btn", type: "button", text: listName(list), "aria-label": `${t("list.open")}: ${listName(list)}`, onclick: () => openFull(list.id) })
+        ),
+        count,
+        options
+      );
+
+    return h(
+      "section",
+      { class: `list-card${full ? " list-card-full" : ""}`, dataset: { list: list.id }, "aria-label": listName(list) },
+      head,
       addRow(list),
       h("ul", { class: "list" }, pending.map((x) => taskElement(x, list, x.id === enteringId))),
       h("p", { class: "card-empty", text: t("task.empty"), hidden: pending.length > 0 }),
@@ -746,6 +885,131 @@
         : null
     );
   }
+
+  // Pone las listas visibles en el orden de "ids" (las ocultas conservan su sitio).
+  function applyOrder(ids) {
+    const byId = new Map(state.lists.map((l) => [l.id, l]));
+    let k = 0;
+    state.lists = state.lists.map((l) => (l.hidden ? l : byId.get(ids[k++])));
+    saveState();
+  }
+
+  // Con el teclado: flechas sobre el asa de la lista.
+  function moveList(id, by) {
+    const ids = visibleLists().map((l) => l.id);
+    const i = ids.indexOf(id);
+    const j = i + by;
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    applyOrder(ids);
+    renderGrid();
+    const grip = $("lists-grid").querySelector(`[data-list="${id}"] .grip`);
+    if (grip) grip.focus();
+  }
+
+  // Arrastrar una lista por su asa: la tarjeta sigue al puntero y un hueco marca dónde caerá. Las columnas se
+  // vuelven a repartir en cada cambio, así que quedan siempre igualadas.
+  function startDrag(event, listId) {
+    if (event.button !== undefined && event.button !== 0) return;
+    const card = event.currentTarget.closest(".list-card");
+    if (!card || expandedId) return;
+    event.preventDefault();
+
+    const all = [...$("lists-grid").querySelectorAll(":scope > .lists-col > *")];
+    const addCard = all.find((c) => !c.dataset.list); // el recuadro de "Nueva lista" siempre va al final
+    const seq = all.filter((c) => c.dataset.list);
+    const rect = card.getBoundingClientRect();
+    const grabX = event.clientX - rect.left;
+    const grabY = event.clientY - rect.top;
+    const placeholder = h("div", { class: "list-card list-card-placeholder", style: `height:${rect.height}px` });
+    seq[seq.indexOf(card)] = placeholder;
+
+    Object.assign(card.style, { position: "fixed", left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, zIndex: "30", pointerEvents: "none" });
+    card.classList.add("is-dragging");
+    document.body.append(card);
+    document.documentElement.classList.add("is-dragging");
+    Flucti.dragging = true;
+    placeCards([...seq, addCard]);
+
+    let x = event.clientX;
+    let y = event.clientY;
+    let lastSwap = 0;
+    let raf = 0;
+
+    const update = () => {
+      card.style.left = `${x - grabX}px`;
+      card.style.top = `${y - grabY}px`;
+      if (performance.now() - lastSwap < 160) return; // evita saltos de un lado a otro al recolocar
+      const target = [...seq, addCard].find((c) => {
+        if (c === placeholder) return false;
+        const r = c.getBoundingClientRect();
+        return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+      });
+      if (!target) return;
+      const from = seq.indexOf(placeholder);
+      const to = target === addCard ? seq.length - 1 : seq.indexOf(target);
+      if (to === from) return;
+      seq.splice(from, 1);
+      seq.splice(to, 0, placeholder);
+      lastSwap = performance.now();
+      placeCards([...seq, addCard]);
+    };
+
+    const tick = () => {
+      const min = Flucti.minScroll();
+      if (y < 90 && window.scrollY > min) window.scrollTo({ top: Math.max(min, window.scrollY - 14), behavior: "instant" });
+      else if (y > window.innerHeight - 90) window.scrollBy({ top: 14, behavior: "instant" });
+      update();
+      raf = requestAnimationFrame(tick);
+    };
+
+    const move = (e) => {
+      x = e.clientX;
+      y = e.clientY;
+    };
+    const end = (e) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      cancelAnimationFrame(raf);
+      card.remove();
+      document.documentElement.classList.remove("is-dragging");
+      Flucti.dragging = false;
+      if (e.type === "pointerup") applyOrder(seq.map((c) => (c === placeholder ? listId : c.dataset.list)));
+      renderGrid();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    raf = requestAnimationFrame(tick);
+  }
+
+  // Lista a pantalla completa: sustituye a la rejilla hasta que se cierra (flecha o Esc).
+  const fullView = $("list-full");
+  let expandedId = null;
+
+  function openFull(id) {
+    expandedId = id;
+    fullView.hidden = false;
+    fullView.scrollTop = 0;
+    Flucti.openDialogs.add(fullView); // bloquea el desplazamiento de la página, como las ventanas
+    document.documentElement.classList.add("modal-open");
+    renderGrid();
+  }
+
+  function closeFull() {
+    if (!expandedId) return;
+    expandedId = null;
+    fullView.hidden = true;
+    $("list-full-body").replaceChildren();
+    Flucti.openDialogs.delete(fullView);
+    if (!Flucti.openDialogs.size) document.documentElement.classList.remove("modal-open");
+    renderGrid();
+  }
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && expandedId && [...Flucti.openDialogs].every((d) => d === fullView)) closeFull();
+  });
 
   function createList(name) {
     state.lists.push(makeList({ name, params: state.params })); // empieza con los parámetros por defecto
@@ -840,7 +1104,7 @@
 
   // Vuelve a repartir las tarjetas que ya están en pantalla (al cambiar el ancho o cargarse la tipografía).
   function rebalance() {
-    if (focusedKey) return; // no se mueve nada mientras se escribe
+    if (focusedKey || expandedId || Flucti.dragging) return; // no se mueve nada mientras se escribe, se arrastra o hay una lista abierta
     placeCards([...$("lists-grid").querySelectorAll(":scope > .lists-col > *")]);
   }
 
@@ -849,9 +1113,21 @@
     const restore = focusedKey;
     inputs.clear();
     newListInput = null;
-    const cards = [...visibleLists().map((list) => buildCard(list, enteringId)), newListCard()];
-    $("lists-grid").replaceChildren(h("div", { class: "lists-col" }), h("div", { class: "lists-col" }));
-    placeCards(cards);
+    const open = expandedId && visibleLists().find((l) => l.id === expandedId);
+    if (expandedId && !open) {
+      // la lista abierta se ocultó o se eliminó: se vuelve a la rejilla
+      expandedId = null;
+      fullView.hidden = true;
+      Flucti.openDialogs.delete(fullView);
+      if (!Flucti.openDialogs.size) document.documentElement.classList.remove("modal-open");
+    }
+    if (open) {
+      $("list-full-body").replaceChildren(buildCard(open, enteringId, true));
+    } else {
+      const cards = [...visibleLists().map((list) => buildCard(list, enteringId)), newListCard()];
+      $("lists-grid").replaceChildren(h("div", { class: "lists-col" }), h("div", { class: "lists-col" }));
+      placeCards(cards);
+    }
     rendering = false;
 
     const el = restore === NEW_KEY ? newListInput : restore ? inputs.get(restore) : null;
@@ -872,6 +1148,7 @@
   const isEmptyValue = (info, v) => {
     if (info.type === "date") return !(v && v.date);
     if (info.type === "checkbox") return !v;
+    if (info.type === "textarea") return richPlain(v) === "";
     return v === undefined || v === null || String(v).trim() === "";
   };
 
@@ -1009,7 +1286,10 @@
     const store = (v) => (draft.values[info.id] = v);
 
     if (info.type === "textarea") {
-      group.append(label(), h("textarea", { class: "field", id: inputId, rows: 3, maxlength: 1000, value: value || "", oninput: (e) => store(e.target.value) }));
+      group.append(
+        h("div", { class: "field-label", text: info.name }),
+        richEditor({ value: value || "", label: info.name, heightKey: info.id, onChange: store })
+      );
     } else if (info.type === "text" || info.type === "number") {
       const props = {
         class: "field",
@@ -1050,6 +1330,16 @@
     refreshTaskError();
   }
 
+  // Eliminar una tarea: el botón pide confirmación con una segunda pulsación (como eliminar una lista).
+  let deleteTaskArmed = false;
+  let deleteTaskTimer = 0;
+
+  function paintDeleteTask() {
+    const button = $("task-delete-btn");
+    button.hidden = !(draft && draft.editingTaskId);
+    button.textContent = t(deleteTaskArmed ? "task.delete.confirm" : "task.delete");
+  }
+
   function renderTaskDialog() {
     if (!recurringAvailable(draftParams()) && !draft.editingTaskId) draft.kind = "once"; // al editar una recurrente no se convierte
     $("task-kind").replaceChildren(
@@ -1072,9 +1362,11 @@
         : [])
     );
     renderTaskFields();
+    paintDeleteTask();
   }
 
   function openTaskDialog(list, showErrors = false) {
+    deleteTaskArmed = false;
     const title = cleanTitle(inputs.get(list.id) ? inputs.get(list.id).value : "");
     $("task-dialog-title").textContent = t("task.dialog.new");
     draft = {
@@ -1090,6 +1382,7 @@
   }
 
   function openTaskDialogForEdit(task) {
+    deleteTaskArmed = false;
     const list = state.lists.find((l) => l.id === task.listId);
 
     draft = {
@@ -1512,6 +1805,17 @@
     for (const p of params) grid.append(paramRow(scope, p));
 
     const removed = DEFAULT_PARAMS.filter((d) => !hasParam(params, d.id));
+
+    // Los parámetros propios que ya existen en otras listas (o en los de por defecto) se ofrecen con un "+".
+    const suggestions = [];
+    const seen = new Set(params.map((p) => p.id));
+    for (const source of [...state.lists.map((l) => l.params), state.params]) {
+      for (const p of source) {
+        if (BUILTIN[p.id] || seen.has(p.id)) continue;
+        seen.add(p.id);
+        suggestions.push(p);
+      }
+    }
     return h(
       "section",
       { class: "settings-section" },
@@ -1526,6 +1830,28 @@
             "div",
             { class: "chip-row" },
             removed.map((d) => h("button", { class: "chip", type: "button", onclick: () => restoreParam(scope, d.id) }, icon("plus", 14), t(`param.${d.id}`)))
+          )
+        )
+        : null,
+      suggestions.length
+        ? h(
+          "div",
+          { class: "removed" },
+          h("p", { class: "settings-hint", text: t("param.suggest.hint") }),
+          h(
+            "div",
+            { class: "chip-row" },
+            suggestions.map((p) =>
+              h("button", {
+                class: "chip",
+                type: "button",
+                onclick: () => {
+                  scopeParams(scope).push(clone(p));
+                  afterParamsChange(scope);
+                  scope.rerender();
+                },
+              }, icon("plus", 14), p.name)
+            )
           )
         )
         : null,
@@ -1687,6 +2013,13 @@
         dateKey: "about.versions.v006.date",
         titleKey: "about.versions.v006.title",
         bodyKey: "about.versions.v006.body",
+        openByDefault: false
+      },
+      {
+        versionKey: "about.versions.v007.label",
+        dateKey: "about.versions.v007.date",
+        titleKey: "about.versions.v007.title",
+        bodyKey: "about.versions.v007.body",
         openByDefault: false
       }
     ];
@@ -1885,6 +2218,7 @@
   }
 
   function deleteList(id) {
+    if (expandedId === id) closeFull();
     state.lists = state.lists.filter((l) => l.id !== id);
     state.tasks = state.tasks.filter((x) => x.listId !== id);
     titleDrafts.delete(id);
@@ -1923,11 +2257,22 @@
   }
 
   // Paleta de colores: unos cuantos fijos y uno libre. onPick recibe el color elegido.
-  function colorPicker(color, onPick) {
+  function colorPicker(color, onPick, { auto = false } = {}) {
     const current = color.toLowerCase();
+    const isCustom = current !== "auto" && !PALETTE.includes(current);
     return h(
       "div",
       { class: "swatches", role: "group", "aria-label": t("layout.color") },
+      auto
+        ? h("button", {
+          type: "button",
+          class: `swatch swatch-auto${current === "auto" ? " is-selected" : ""}`,
+          "aria-label": t("hl.color.auto"),
+          title: t("hl.color.auto"),
+          "aria-pressed": String(current === "auto"),
+          onclick: () => onPick("auto"),
+        })
+        : null,
       PALETTE.map((preset) =>
         h("button", {
           type: "button",
@@ -1940,8 +2285,8 @@
       ),
       h("input", {
         type: "color",
-        class: `swatch swatch-custom${PALETTE.includes(current) ? "" : " is-selected"}`,
-        value: color,
+        class: `swatch swatch-custom${isCustom ? " is-selected" : ""}`,
+        value: isCustom ? color : PALETTE[0],
         "aria-label": t("layout.color.custom"),
         onchange: (event) => onPick(event.target.value),
       })
@@ -2004,6 +2349,156 @@
     );
   }
 
+  // Resaltado: condiciones sobre los parámetros de la lista, color y parpadeo.
+  function highlightSection(list) {
+    const hl = list.highlight;
+    const params = highlightParams(list.params);
+    const infos = new Map(params.map((p) => [p.id, p]));
+    const rebuild = () => {
+      saveState();
+      renderGrid();
+      renderListDialog();
+    };
+    const apply = () => {
+      saveState();
+      renderGrid();
+    };
+    const opsFor = (info) => HL_OPS[hlGroup(info.type)] || [];
+
+    const conditionRow = (cond) => {
+      const info = infos.get(cond.param);
+      const remove = h("button", {
+        class: "icon-btn small",
+        type: "button",
+        "aria-label": t("hl.remove"),
+        onclick: () => {
+          hl.conditions.splice(hl.conditions.indexOf(cond), 1);
+          rebuild();
+        },
+      }, icon("close", 16));
+      if (!info) return h("div", { class: "hl-row" }, h("div", { class: "hl-line hl-missing" }, h("span", { text: t("hl.missing") }), remove));
+
+      const paramSelect = dropdown({
+        value: cond.param,
+        label: t("hl.param"),
+        options: params.map((p) => ({ value: p.id, label: p.name })),
+        onChange: (id) => {
+          cond.param = id;
+          cond.op = opsFor(infos.get(id))[0];
+          cond.value = defaultConditionValue(cond.op, infos.get(id));
+          rebuild();
+        },
+      });
+      const opSelect = dropdown({
+        value: cond.op,
+        label: t("hl.op"),
+        options: opsFor(info).map((op) => ({ value: op, label: t(`hl.op.${op}`) })),
+        onChange: (op) => {
+          if (HL_NEEDS[op] !== HL_NEEDS[cond.op]) cond.value = defaultConditionValue(op, info);
+          cond.op = op;
+          rebuild();
+        },
+      });
+
+      const needs = HL_NEEDS[cond.op];
+      let value = null;
+      if (needs === "number") {
+        value = h("input", {
+          class: "field",
+          type: "number",
+          inputmode: "decimal",
+          step: "any",
+          value: cond.value,
+          "aria-label": t("hl.value"),
+          oninput: (event) => {
+            cond.value = event.target.value === "" ? "" : Number(event.target.value);
+            apply();
+          },
+        });
+      } else if (needs === "text") {
+        value = h("input", {
+          class: "field",
+          type: "text",
+          maxlength: 60,
+          value: cond.value,
+          placeholder: t("hl.value"),
+          "aria-label": t("hl.value"),
+          oninput: (event) => {
+            cond.value = event.target.value;
+            apply();
+          },
+        });
+      } else if (needs === "select") {
+        value = dropdown({
+          value: cond.value,
+          label: t("hl.value"),
+          options: (info.options || []).map((o) => ({ value: o.id, label: o.label, color: o.color })),
+          onChange: (v) => {
+            cond.value = v;
+            apply();
+          },
+        });
+      }
+      return h("div", { class: "hl-row" }, h("div", { class: "hl-line" }, paramSelect, opSelect, remove), value ? h("div", { class: "hl-value" }, value) : null);
+    };
+
+    return h(
+      "section",
+      { class: "settings-section" },
+      h("p", { class: "settings-hint", text: t("list.highlight.hint") }),
+      hl.conditions.map(conditionRow),
+      h("button", {
+        class: "text-btn",
+        type: "button",
+        text: t("hl.add"),
+        onclick: () => {
+          const first = params.find((p) => p.id === "due") || params[0];
+          const op = opsFor(first)[0];
+          hl.conditions.push({ param: first.id, op, value: defaultConditionValue(op, first) });
+          rebuild();
+        },
+      }),
+      hl.conditions.length > 1
+        ? h(
+          "div",
+          { class: "field-group" },
+          h("span", { class: "field-label", text: t("hl.match.label") }),
+          dropdown({
+            value: hl.match,
+            label: t("hl.match.label"),
+            options: [{ value: "all", label: t("hl.match.all") }, { value: "any", label: t("hl.match.any") }],
+            onChange: (match) => {
+              hl.match = match;
+              apply();
+            },
+          })
+        )
+        : null,
+      h(
+        "div",
+        { class: "field-group" },
+        h("span", { class: "field-label", text: t("hl.color") }),
+        colorPicker(hl.color, (color) => {
+          hl.color = color;
+          rebuild();
+        }, { auto: true })
+      ),
+      h(
+        "label",
+        { class: "check-row" },
+        h("input", {
+          type: "checkbox",
+          checked: hl.blink,
+          onchange: (event) => {
+            hl.blink = event.target.checked;
+            apply();
+          },
+        }),
+        t("hl.blink")
+      )
+    );
+  }
+
   function renderListDialog() {
     const list = state.lists.find((l) => l.id === editingListId);
     if (!list) return;
@@ -2038,6 +2533,7 @@
         { value: "params", label: t("list.tab.params") },
         { value: "layout", label: t("list.tab.layout") },
         { value: "sort", label: t("list.tab.sort") },
+        { value: "highlight", label: t("list.tab.highlight") },
       ],
       value: listTab,
       onChange: (tab) => {
@@ -2052,7 +2548,9 @@
         ? layoutSection(list)
         : listTab === "sort"
           ? sortSection(list)
-          : h("section", { class: "settings-section" }, paramsSection(listScope));
+          : listTab === "highlight"
+            ? highlightSection(list)
+            : h("section", { class: "settings-section" }, paramsSection(listScope));
 
     $("list-body").replaceChildren(
       h("div", { class: "field-group" }, h("label", { class: "field-label", for: "list-name-input", text: t("list.name") }), nameInput),
@@ -2142,6 +2640,27 @@
     if (settingsDialog.open) renderSettings();
   });
 
+  $("task-delete-btn").addEventListener("click", () => {
+    if (!draft || !draft.editingTaskId) return;
+    if (!deleteTaskArmed) {
+      deleteTaskArmed = true;
+      paintDeleteTask();
+      clearTimeout(deleteTaskTimer);
+      deleteTaskTimer = setTimeout(() => {
+        deleteTaskArmed = false;
+        if (draft) paintDeleteTask();
+      }, 4000);
+      return;
+    }
+    const id = draft.editingTaskId;
+    clearTimeout(deleteTaskTimer);
+    deleteTaskArmed = false;
+    state.tasks = state.tasks.filter((x) => x.id !== id);
+    saveState();
+    closeTaskDialog(); // sin borrador: al cerrarse no se guarda nada
+    renderGrid();
+  });
+
   $("task-close").addEventListener("click", () => attemptCloseTask(false));
   $("task-save-btn").addEventListener("click", () => attemptCloseTask(true));
   taskDialog.addEventListener("close", () => {
@@ -2165,7 +2684,7 @@
   // Las fechas relativas ("Mañana") cambian con el día: se refrescan cada minuto y al volver a la pestaña,
   // sin interrumpir si se está escribiendo o hay una ventana abierta.
   const refresh = () => {
-    if (!focusedKey && !Flucti.isDialogOpen()) renderGrid();
+    if (!focusedKey && !Flucti.dragging && [...Flucti.openDialogs].every((d) => d === fullView)) renderGrid(); // la lista a pantalla completa también se refresca
   };
   setInterval(refresh, 60 * 1000);
   document.addEventListener("visibilitychange", () => {

@@ -748,8 +748,9 @@
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   const MOVE_DURATION = 800;
 
-  // Con una ventana abierta (ajustes, tarea, lista) los gestos de desplazamiento de la página se ignoran.
-  const isLocked = () => Flucti.isDialogOpen();
+  // Con una ventana abierta (ajustes, tarea, lista), una lista a pantalla completa o una lista arrastrándose,
+  // los gestos de desplazamiento de la página se ignoran.
+  const isLocked = () => Flucti.isDialogOpen() || Flucti.dragging === true;
 
   let locked = false;
   let lockTimer;
@@ -757,10 +758,19 @@
   const tasksTop = () => tasksSection.offsetTop;
   const inHome = () => window.scrollY < tasksTop() - 2;
   const atTasksTop = () => Math.abs(window.scrollY - tasksTop()) <= 2;
+  Flucti.minScroll = tasksTop;
+
+  // El gesto actual empezó dentro de la hoja de tareas: puede subir hasta su franja superior, pero no pasar de ahí.
+  // Para ver la hora hay que hacer otro gesto desde esa franja.
+  let gestureFromTasks = false;
+  let touching = false;
+
+  const jump = (top) => window.scrollTo({ top, behavior: "instant" }); // sin animación
 
   function goTo(top) {
     if (locked) return;
     locked = true;
+    gestureFromTasks = false;
     window.scrollTo({ top, behavior: reduceMotion.matches ? "auto" : "smooth" });
     clearTimeout(lockTimer);
     lockTimer = setTimeout(() => {
@@ -781,7 +791,10 @@
       if (event.ctrlKey || isLocked()) return;
 
       const now = performance.now();
-      if (now - lastWheelTime > 200) wheelStartedAtTop = atTasksTop();
+      if (now - lastWheelTime > 200) {
+        wheelStartedAtTop = atTasksTop();
+        gestureFromTasks = window.scrollY >= tasksTop() - 2;
+      }
       lastWheelTime = now;
 
       if (locked) {
@@ -789,16 +802,28 @@
         return;
       }
 
-      if (event.deltaY > 0 && inHome()) {
+      const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+      if (delta > 0 && inHome()) {
         event.preventDefault();
         goDown();
-      } else if (
-        event.deltaY < 0 &&
-        window.scrollY > 0 &&
-        ((wheelStartedAtTop && atTasksTop()) || inHome())
-      ) {
-        event.preventDefault();
-        goUp();
+        return;
+      }
+      if (delta >= 0) return;
+
+      if (inHome()) {
+        if (gestureFromTasks) {
+          event.preventDefault();
+          jump(tasksTop()); // la inercia no puede llevar de las tareas a mitad de la hora
+        } else if (window.scrollY > 0) {
+          event.preventDefault();
+          goUp();
+        }
+      } else if (atTasksTop()) {
+        event.preventDefault(); // en el borde: solo un gesto que empiece aquí lleva a la hora
+        if (wheelStartedAtTop) goUp();
+      } else if (window.scrollY + delta < tasksTop()) {
+        event.preventDefault(); // el desplazamiento se queda justo en la franja superior
+        jump(tasksTop());
       }
     },
     { passive: false }
@@ -811,11 +836,20 @@
     "touchstart",
     (event) => {
       if (isLocked()) return;
+      touching = true;
       touchStartY = event.touches[0].clientY;
       touchStartedAtTop = atTasksTop();
+      gestureFromTasks = window.scrollY >= tasksTop() - 2;
     },
     { passive: true }
   );
+
+  const touchEnd = () => {
+    touching = false;
+    scheduleSettle();
+  };
+  window.addEventListener("touchend", touchEnd, { passive: true });
+  window.addEventListener("touchcancel", touchEnd, { passive: true });
 
   window.addEventListener(
     "touchmove",
@@ -826,6 +860,10 @@
       if (locked || inHome()) {
         if (event.cancelable) event.preventDefault();
         if (locked) return;
+        if (gestureFromTasks) {
+          jump(tasksTop()); // se empezó en las tareas: no se pasa de la franja superior
+          return;
+        }
         if (swipe > 8) goDown();
         else if (swipe < -8 && window.scrollY > 0) goUp();
         return;
@@ -871,9 +909,51 @@
     tasksSection.style.setProperty("--progress", progress.toFixed(3));
     tasksSection.classList.toggle("open", progress > 0.5);
   }
-  window.addEventListener("scroll", updateOpen, { passive: true });
-  window.addEventListener("resize", updateOpen);
+  // La pantalla nunca se queda a medias entre la hora y las tareas: al acabar el movimiento se asienta en una
+  // de las dos. Y un gesto que empezó en las tareas no puede pasar de su franja superior (ni con la inercia).
+  let lastY = window.scrollY;
+  let direction = 0;
+  let settleTimer = 0;
+
+  function scheduleSettle() {
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(settle, 140);
+  }
+
+  function settle() {
+    if (isLocked()) return;
+    if (locked || touching) {
+      scheduleSettle(); // todavía hay movimiento: se vuelve a comprobar luego
+      return;
+    }
+    const top = tasksTop();
+    const y = window.scrollY;
+    if (y <= 1 || y >= top - 1) return; // ya está en la hora o en las tareas
+    const toTasks = gestureFromTasks || direction > 0 || (direction === 0 && y > top / 2);
+    goTo(toTasks ? top : 0);
+  }
+
+  window.addEventListener(
+    "scroll",
+    () => {
+      updateOpen();
+      const y = window.scrollY;
+      if (y !== lastY) direction = y > lastY ? 1 : -1;
+      lastY = y;
+      if (!locked && !isLocked() && gestureFromTasks && y < tasksTop() - 1) {
+        jump(tasksTop());
+        return;
+      }
+      scheduleSettle();
+    },
+    { passive: true }
+  );
+  window.addEventListener("resize", () => {
+    updateOpen();
+    scheduleSettle();
+  });
   updateOpen();
+  scheduleSettle();
 
   /* ------------------------------------------------------------------------
      Inicio

@@ -8,9 +8,12 @@
    ========================================================================== */
 
 const Flucti = {
+  version: "v.0.1.6-beta", // versión actual: se muestra en pequeño al final de la pantalla de tareas
   now: () => new Date(), // "ahora": script.js lo sustituye para poder probar horas con testSky
   goToTasks: () => {}, // script.js lo conecta con el desplazamiento a la pantalla de tareas
   openDialogs: new Set(),
+  dragging: false, // true mientras se arrastra una lista (tasks.js): los gestos de la página se ignoran
+  minScroll: () => 0, // script.js: posición de la franja superior de la hoja de tareas (hasta ahí se puede subir)
 
   isDialogOpen() {
     return Flucti.openDialogs.size > 0;
@@ -67,6 +70,8 @@ const I18n = (() => {
     const lang = current();
     document.documentElement.lang = lang.code;
     document.title = t("app.title");
+    const version = document.getElementById("app-version");
+    if (version) version.textContent = Flucti.version;
 
     document.querySelectorAll("[data-i18n]").forEach((el) => (el.textContent = t(el.dataset.i18n)));
     document.querySelectorAll("[data-i18n-aria-label]").forEach((el) => el.setAttribute("aria-label", t(el.dataset.i18nAriaLabel)));

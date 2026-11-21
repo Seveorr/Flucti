@@ -6,7 +6,7 @@
    h()           crea elementos del DOM        icon()        iconos
    dates         utilidades de fechas          segmented()   deslizador de varias opciones
    dropdown()    lista desplegable             datePicker()  selector de día
-   timePicker()  selector de hora
+   timePicker()  selector de hora (reloj)      richEditor()  texto enriquecido (negrita, cursiva, listas)
    ========================================================================== */
 const UI = (() => {
   const PROPS = new Set(["value", "checked", "disabled", "hidden", "selected"]);
@@ -43,6 +43,9 @@ const UI = (() => {
     clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
     repeat: '<path d="M17 2l4 4-4 4M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H3"/>',
     trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12h10l1-12M9 7V4h6v3"/>',
+    grip: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
+    listBullet: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
+    listNumber: '<path d="M10 6h10M10 12h10M10 18h10M4 4.5l1.5-1V9M3.5 14h3l-3 3.5h3"/>',
     eye: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
     eyeOff: '<path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.2 4M6.2 6.6C3.6 8.4 2 12 2 12s4 7 10 7a9.7 9.7 0 0 0 4.1-.9"/>',
   };
@@ -277,18 +280,21 @@ const UI = (() => {
       const first = parseDateString(view);
       const total = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
       const blanks = (first.getDay() + 6) % 7; // lunes primero
+      const trailing = (7 - ((blanks + total) % 7)) % 7; // días que completan la última semana
       const today = todayString();
+      const month = view.slice(0, 7);
       const cells = [];
-      for (let i = 0; i < blanks; i++) cells.push(h("span"));
-      for (let day = 1; day <= total; day++) {
-        const date = `${view.slice(0, 7)}-${pad2(day)}`;
+      // También salen los días del mes anterior y posterior que caen en la primera y la última semana (más claros).
+      for (let i = -blanks; i < total + trailing; i++) {
+        const date = addDays(view, i);
+        const outside = date.slice(0, 7) !== month;
         cells.push(
           h("button", {
             type: "button",
-            class: `cal-day${date === current ? " is-selected" : ""}${date === today ? " is-today" : ""}`,
+            class: `cal-day${outside ? " is-outside" : ""}${date === current ? " is-selected" : ""}${date === today ? " is-today" : ""}`,
             "aria-pressed": String(date === current),
             "aria-label": new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(parseDateString(date)),
-            text: String(day),
+            text: String(parseDateString(date).getDate()),
             onclick: () => {
               set(date, true);
               pop.close();
@@ -336,58 +342,161 @@ const UI = (() => {
 
   /* ------------------------------------------------------------------------
      Selector de hora: timePicker({ value: "HH:MM" o "", onChange, label, placeholder, disabled })
-     Dos columnas con desplazamiento: horas (00-23) y minutos (00-59).
+     Un reloj: primero se elige la hora (anillo exterior 1-12, interior 13-23 y 00) y luego los minutos.
+     Se puede pulsar o arrastrar; con el teclado, las flechas ajustan el valor y Enter confirma.
      ------------------------------------------------------------------------ */
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const svgEl = (tag, attrs = {}) => {
+    const el = document.createElementNS(SVG_NS, tag);
+    for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, String(value));
+    return el;
+  };
+  const DIAL = { center: 100, outer: 78, inner: 50 };
+  const dialPoint = (degrees, radius) => [
+    DIAL.center + radius * Math.sin((degrees * Math.PI) / 180),
+    DIAL.center - radius * Math.cos((degrees * Math.PI) / 180),
+  ];
+
   function timePicker({ value, onChange, label, placeholder, disabled }) {
     let current = value || "";
+    let mode = "hour"; // "hour" o "minute"
     const root = h("div", { class: "picker picker-time" });
     const text = h("span", { class: "picker-text" });
     const button = h("button", { type: "button", class: "field picker-button", "aria-haspopup": "dialog", "aria-expanded": "false", "aria-label": label, disabled: Boolean(disabled) }, icon("clock", 16), text);
     const panel = h("div", { class: "popover time-panel", role: "dialog", "aria-label": label, hidden: true });
 
-    const cells = (count, which) =>
-      Array.from({ length: count }, (_, i) =>
-        h("button", { type: "button", class: "time-cell", text: pad2(i), onclick: () => (which === "hour" ? pick(pad2(i), null) : pick(null, pad2(i))) })
-      );
-    const hourButtons = cells(24, "hour");
-    const minuteButtons = cells(60, "minute");
-    const hourColumn = h("div", { class: "time-col hours" }, hourButtons);
-    const minuteColumn = h("div", { class: "time-col minutes" }, minuteButtons);
+    const hourSeg = h("button", { type: "button", class: "time-seg", "aria-label": I18n.t("time.hour"), onclick: () => setMode("hour") });
+    const minuteSeg = h("button", { type: "button", class: "time-seg", "aria-label": I18n.t("time.minute"), onclick: () => setMode("minute") });
+    const head = h("div", { class: "time-head" }, hourSeg, h("span", { text: ":" }), minuteSeg);
+
+    const svg = svgEl("svg", { viewBox: "0 0 200 200", class: "dial", role: "slider", tabindex: "0", "aria-label": label });
+    const hand = svgEl("line", { class: "dial-hand", x1: 100, y1: 100 });
+    const knob = svgEl("circle", { class: "dial-knob" });
+    const labels = svgEl("g");
+    svg.append(svgEl("circle", { class: "dial-face", cx: 100, cy: 100, r: 96 }), hand, knob, labels);
+
+    const parts = () => {
+      const [hh, mm] = current ? current.split(":").map(Number) : [null, null];
+      return { hh, mm };
+    };
 
     function paint() {
       text.textContent = current || placeholder;
       text.classList.toggle("is-placeholder", !current);
-      const [hh, mm] = current ? current.split(":") : [null, null];
-      hourButtons.forEach((b, i) => b.classList.toggle("is-selected", pad2(i) === hh));
-      minuteButtons.forEach((b, i) => b.classList.toggle("is-selected", pad2(i) === mm));
+      const { hh, mm } = parts();
+      hourSeg.textContent = hh === null ? "--" : pad2(hh);
+      minuteSeg.textContent = mm === null ? "--" : pad2(mm);
+      hourSeg.classList.toggle("is-active", mode === "hour");
+      minuteSeg.classList.toggle("is-active", mode === "minute");
+
+      labels.replaceChildren();
+      let selected = null; // { x, y, small, label }
+      const addLabel = (content, angle, radius, inner, isSelected) => {
+        const [x, y] = dialPoint(angle, radius);
+        const node = svgEl("text", { class: `dial-label${inner ? " inner" : ""}${isSelected ? " is-selected" : ""}`, x, y });
+        node.textContent = content;
+        labels.append(node);
+        return [x, y];
+      };
+
+      if (mode === "hour") {
+        const k = hh === null ? -1 : hh % 12; // posición en la esfera (0 = arriba)
+        const isInner = hh === 0 || (hh !== null && hh > 12);
+        for (let i = 0; i < 12; i++) {
+          addLabel(String(i === 0 ? 12 : i), i * 30, DIAL.outer, false, hh !== null && !isInner && k === i);
+          addLabel(pad2(i === 0 ? 0 : 12 + i), i * 30, DIAL.inner, true, hh !== null && isInner && k === i);
+        }
+        if (hh !== null) selected = { point: dialPoint(k * 30, isInner ? DIAL.inner : DIAL.outer), small: false };
+      } else {
+        for (let i = 0; i < 12; i++) addLabel(pad2(i * 5), i * 30, DIAL.outer, false, mm !== null && mm === i * 5);
+        if (mm !== null) selected = { point: dialPoint(mm * 6, DIAL.outer), small: mm % 5 !== 0 };
+      }
+
+      hand.style.display = knob.style.display = selected ? "" : "none";
+      if (selected) {
+        const [x, y] = selected.point;
+        hand.setAttribute("x2", x);
+        hand.setAttribute("y2", y);
+        knob.setAttribute("cx", x);
+        knob.setAttribute("cy", y);
+        knob.setAttribute("r", selected.small ? 5 : 16);
+        svg.setAttribute("aria-valuetext", current);
+      }
     }
 
-    // Al abrir, cada columna se desplaza hasta la hora y los minutos elegidos.
-    function reveal(column, buttons, selected) {
-      const target = buttons[selected];
-      const top = target ? target.offsetTop - column.clientHeight / 2 + target.offsetHeight / 2 : 0;
-      column.scrollTop = Number.isFinite(top) ? Math.max(0, top) : 0;
+    function setMode(next) {
+      mode = next;
+      paint();
     }
 
-    // Al elegir la hora, los minutos se quedan como estaban (o en punto); al elegir los minutos se cierra.
+    // Al elegir la hora, los minutos se quedan como estaban (o en punto).
     function pick(hour, minute) {
-      const [hh, mm] = current ? current.split(":") : [null, null];
-      current = `${hour ?? hh ?? "09"}:${minute ?? mm ?? "00"}`;
+      const { hh, mm } = parts();
+      current = `${hour ?? pad2(hh ?? 9)}:${minute ?? pad2(mm ?? 0)}`;
       paint();
       if (onChange) onChange(current);
-      if (minute !== null) {
+    }
+
+    function finishStep() {
+      if (mode === "hour") setMode("minute");
+      else {
         pop.close();
         button.focus();
       }
     }
 
-    panel.append(hourColumn, minuteColumn);
-    root.append(button, panel);
-    const pop = makePopover(root, button, panel, () => {
-      const [hh, mm] = current ? current.split(":").map(Number) : [-1, -1];
-      reveal(hourColumn, hourButtons, hh);
-      reveal(minuteColumn, minuteButtons, mm);
+    // Posición del puntero respecto al centro: ángulo en grados (0 = arriba, en sentido horario) y distancia.
+    function fromPointer(event) {
+      const rect = svg.getBoundingClientRect();
+      const scale = 200 / rect.width;
+      const x = (event.clientX - rect.left) * scale - DIAL.center;
+      const y = (event.clientY - rect.top) * scale - DIAL.center;
+      return { angle: ((Math.atan2(x, -y) * 180) / Math.PI + 360) % 360, radius: Math.hypot(x, y) };
+    }
+
+    function apply(event) {
+      const { angle, radius } = fromPointer(event);
+      if (mode === "hour") {
+        const k = Math.round(angle / 30) % 12;
+        const inner = radius < (DIAL.outer + DIAL.inner) / 2;
+        pick(pad2(inner ? (k === 0 ? 0 : 12 + k) : k === 0 ? 12 : k), null);
+      } else {
+        pick(null, pad2(Math.round(angle / 6) % 60));
+      }
+    }
+
+    let dragging = false;
+    svg.addEventListener("pointerdown", (event) => {
+      dragging = true;
+      svg.setPointerCapture(event.pointerId);
+      apply(event);
     });
+    svg.addEventListener("pointermove", (event) => {
+      if (dragging) apply(event);
+    });
+    const release = () => {
+      if (!dragging) return;
+      dragging = false;
+      finishStep();
+    };
+    svg.addEventListener("pointerup", release);
+    svg.addEventListener("pointercancel", () => (dragging = false));
+    svg.addEventListener("keydown", (event) => {
+      const step = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1 }[event.key];
+      if (step) {
+        event.preventDefault();
+        const { hh, mm } = parts();
+        if (mode === "hour") pick(pad2((((hh ?? 9) + step) % 24 + 24) % 24), null);
+        else pick(null, pad2((((mm ?? 0) + step) % 60 + 60) % 60));
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        finishStep();
+      }
+    });
+
+    panel.append(head, svg);
+    root.append(button, panel);
+    const pop = makePopover(root, button, panel, () => setMode("hour"));
     paint();
     root.picker = {
       get value() { return current; },
@@ -397,5 +506,187 @@ const UI = (() => {
     return root;
   }
 
-  return { h, icon, uid, clone, dates, segmented, dropdown, datePicker, timePicker, closePopover };
+  /* ------------------------------------------------------------------------
+     Texto enriquecido (descripciones y campos de texto largo)
+     Se guarda como HTML limpio: solo negrita, cursiva, tachado, subrayado y listas.
+     Los textos antiguos (texto plano) se leen igual, con sus saltos de línea.
+     ------------------------------------------------------------------------ */
+  const RICH_TAGS = { B: "strong", STRONG: "strong", I: "em", EM: "em", U: "u", S: "s", STRIKE: "s", DEL: "s", UL: "ul", OL: "ol", LI: "li", BR: "br", DIV: "div", P: "div" };
+  const RICH_DETECT = /<\/?(strong|em|b|i|u|s|ul|ol|li|br|div|p|strike|del)\b[^>]*>/i;
+  const escapeHtml = (value) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  function copyAllowed(source, target) {
+    for (const node of source.childNodes) {
+      if (node.nodeType === 3) {
+        target.append(document.createTextNode(node.nodeValue));
+      } else if (node.nodeType === 1) {
+        const tag = RICH_TAGS[node.tagName];
+        if (tag) {
+          const el = document.createElement(tag);
+          if (tag !== "br") copyAllowed(node, el);
+          target.append(el);
+        } else if (node.tagName !== "SCRIPT" && node.tagName !== "STYLE") {
+          copyAllowed(node, target); // etiqueta no permitida: se queda su contenido, sin la etiqueta
+        }
+      }
+    }
+  }
+
+  function richClean(html) {
+    const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html"); // documento inerte: no ejecuta nada
+    const box = document.createElement("div");
+    copyAllowed(doc.body, box);
+    return box.innerHTML;
+  }
+
+  // HTML seguro de un valor guardado (texto plano antiguo o HTML del editor).
+  function richHtml(value) {
+    if (typeof value !== "string" || !value) return "";
+    return RICH_DETECT.test(value) ? richClean(value) : escapeHtml(value).replace(/\r?\n/g, "<br>");
+  }
+
+  // Solo el texto, en una línea (vistas previas, orden, búsquedas y comprobar si está vacío).
+  function richPlain(value) {
+    const box = document.createElement("div");
+    box.innerHTML = richHtml(value);
+    box.querySelectorAll("br, div, li").forEach((el) => el.append(document.createTextNode(" ")));
+    return box.textContent.replace(/\s+/g, " ").trim();
+  }
+
+  // La altura del cuadro se recuerda: al volver a abrir una tarea, el cuadro mide lo que lo dejaste.
+  const EDITOR_KEY = "flucti:editor:v1";
+  function savedEditorHeight(key) {
+    try {
+      return Number(JSON.parse(localStorage.getItem(EDITOR_KEY) || "{}")[key]) || 0;
+    } catch {
+      return 0;
+    }
+  }
+  function saveEditorHeight(key, px) {
+    try {
+      const all = JSON.parse(localStorage.getItem(EDITOR_KEY) || "{}");
+      all[key] = Math.round(px);
+      localStorage.setItem(EDITOR_KEY, JSON.stringify(all));
+    } catch {
+      /* Sin almacenamiento disponible */
+    }
+  }
+
+  function richEditor({ value, onChange, label, heightKey = "default" }) {
+    const area = h("div", { class: "rich-area", contenteditable: "true", role: "textbox", "aria-multiline": "true", "aria-label": label, html: richHtml(value) });
+
+    const sync = () => {
+      const clean = richClean(area.innerHTML);
+      onChange(richPlain(clean) ? clean : "");
+    };
+
+    const tools = [
+      { command: "bold", label: "rich.bold", content: h("strong", { text: "B" }) },
+      { command: "italic", label: "rich.italic", content: h("em", { text: "I" }) },
+      { command: "strikeThrough", label: "rich.strike", content: h("s", { text: "S" }) },
+      { command: "insertUnorderedList", label: "rich.ul", content: icon("listBullet", 16) },
+      { command: "insertOrderedList", label: "rich.ol", content: icon("listNumber", 16) },
+    ];
+    const buttons = tools.map((tool) =>
+      h("button", {
+        type: "button",
+        class: "rich-btn",
+        "aria-label": I18n.t(tool.label),
+        title: I18n.t(tool.label),
+        "aria-pressed": "false",
+        onmousedown: (event) => event.preventDefault(), // el texto no pierde la selección al pulsar
+        onclick: () => {
+          if (document.activeElement !== area) area.focus(); // si ya tiene el foco, el cursor se queda donde estaba
+          const caret = tool.command.startsWith("insert") ? caretOffset() : null; // solo las listas lo necesitan
+          document.execCommand(tool.command);
+          if (caret !== null) setCaret(caret); // Chrome lleva el cursor al principio al crear una lista
+          sync();
+          paintTools();
+        },
+      }, tool.content)
+    );
+
+    // Posición del cursor (en caracteres desde el principio) cuando no hay texto seleccionado.
+    function caretOffset() {
+      const selection = window.getSelection();
+      if (!selection.rangeCount || !area.contains(selection.anchorNode)) return null;
+      const range = selection.getRangeAt(0);
+      if (!range.collapsed) return null;
+      const before = document.createRange();
+      before.selectNodeContents(area);
+      before.setEnd(range.endContainer, range.endOffset);
+      return before.toString().length;
+    }
+
+    function setCaret(offset) {
+      const walker = document.createTreeWalker(area, NodeFilter.SHOW_TEXT);
+      let left = offset;
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (left <= node.length) {
+          const range = document.createRange();
+          range.setStart(node, left);
+          range.collapse(true);
+          const selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+          return;
+        }
+        left -= node.length;
+      }
+    }
+
+    function paintTools() {
+      if (document.activeElement !== area) return;
+      tools.forEach((tool, i) => {
+        let on = false;
+        try {
+          on = document.queryCommandState(tool.command);
+        } catch {
+          /* se ignora */
+        }
+        buttons[i].setAttribute("aria-pressed", String(on));
+      });
+    }
+
+    area.addEventListener("input", () => {
+      if (!area.textContent.trim() && !area.querySelector("li")) area.innerHTML = ""; // que no quede un <br> suelto
+      sync();
+    });
+    // Se pega solo el texto, sin estilos de otras páginas.
+    area.addEventListener("paste", (event) => {
+      event.preventDefault();
+      const clipboard = event.clipboardData || window.clipboardData;
+      document.execCommand("insertText", false, clipboard ? clipboard.getData("text/plain") : "");
+    });
+    let wasConnected = false;
+    const onSelection = () => {
+      if (area.isConnected) wasConnected = true;
+      else if (wasConnected) return document.removeEventListener("selectionchange", onSelection);
+      paintTools();
+    };
+    document.addEventListener("selectionchange", onSelection);
+
+    const saved = savedEditorHeight(heightKey);
+    if (saved) area.style.height = `${saved}px`;
+    if (window.ResizeObserver) {
+      let known = saved;
+      let timer = 0;
+      new ResizeObserver(() => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          const height = area.offsetHeight;
+          if (height <= 0) return; // la ventana está cerrada
+          if (!known) known = height; // primera medida: es la de partida, no un cambio del usuario
+          else if (Math.abs(height - known) > 2) {
+            known = height;
+            saveEditorHeight(heightKey, height);
+          }
+        }, 200);
+      }).observe(area);
+    }
+
+    return h("div", { class: "rich" }, h("div", { class: "rich-bar", role: "toolbar", "aria-label": I18n.t("rich.toolbar") }, buttons), area);
+  }
+
+  return { h, icon, uid, clone, dates, segmented, dropdown, datePicker, timePicker, richEditor, richHtml, richPlain, closePopover };
 })();

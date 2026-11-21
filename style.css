@@ -22,6 +22,7 @@
   --space-s: 0.75rem;
   --space-m: 1.5rem;
   --space-l: 3rem;
+  --gutter: 1rem; /* margen lateral de las listas: el mismo en cualquier pantalla */
 
   /* Movimiento */
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
@@ -182,6 +183,8 @@ body {
 /* Hoja de tareas: rectángulo de ancho completo con esquinas superiores redondeadas.
    Empieza a la altura de la flecha (asoma en la pantalla de inicio) y llega al borde inferior. */
 .tasks {
+  display: flex;
+  flex-direction: column; /* la versión queda siempre abajo del todo, aunque haya pocas tareas */
   --peek: calc(var(--space-m) + 2.75rem + 0.5rem + env(safe-area-inset-bottom, 0px));
   --sheet-radius: calc(1.75rem * (1 - var(--progress, 0))); /* se va a 0 al bajar a las tareas */
   position: relative;
@@ -208,8 +211,7 @@ body.ready .tasks::before {
 }
 
 .tasks-inner {
-  width: min(100% - 2rem, 64rem);
-  margin-inline: auto;
+  margin-inline: max(var(--gutter), env(safe-area-inset-left, 0px)) max(var(--gutter), env(safe-area-inset-right, 0px));
   padding-top: calc(4.5rem + env(safe-area-inset-top, 0px)); /* deja sitio a la franja de botones */
   padding-bottom: calc(var(--space-l) + env(safe-area-inset-bottom, 0px));
   opacity: 0;
@@ -321,6 +323,12 @@ body.ready .tasks::before {
   min-width: 0;
 }
 
+.task-desc ul,
+.task-desc ol {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
 .task-desc {
   display: -webkit-box;
   overflow: hidden;
@@ -353,16 +361,27 @@ body.ready .tasks::before {
   font-weight: 600;
 }
 
-/* Las tareas que vencen mañana se resaltan con una franja y un fondo suave del color de acento. */
-.meta-tomorrow {
-  color: var(--accent);
-  font-weight: 600;
+/* Tareas resaltadas (según las condiciones de su lista): un fondo uniforme del color elegido, sin franjas. */
+.task.is-highlighted .task-content {
+  background: color-mix(in srgb, var(--hl) 14%, transparent);
+  border-bottom-color: transparent;
+  border-radius: var(--radius-m);
 }
 
-.task.due-tomorrow .task-content {
-  background: color-mix(in srgb, var(--accent) 9%, transparent);
-  box-shadow: inset 3px 0 0 var(--accent);
-  border-radius: var(--radius-s);
+.task.is-highlighted.hl-blink .task-content {
+  animation: hl-blink 1.6s ease-in-out infinite;
+}
+
+@keyframes hl-blink {
+  50% {
+    background: color-mix(in srgb, var(--hl) 3%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task.hl-blink .task-content {
+    animation: none !important;
+  }
 }
 
 /* Energía: tres barras, llenas según el nivel (baja 1, media 2, alta 3) */
@@ -590,7 +609,7 @@ html.modal-open {
 .modal-head {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 20; /* por encima de todo lo que se desplaza debajo (deslizadores, desplegables…) */
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -608,7 +627,8 @@ html.modal-open {
   font-weight: 600;
 }
 
-.modal-body > .primary-btn {
+.modal-body > .primary-btn,
+.modal-body > .text-btn {
   width: 100%;
   margin-top: var(--space-s);
 }
@@ -703,6 +723,7 @@ textarea.field {
 /* Deslizador de varias opciones (tipo de tarea, tipo de repetición) */
 .segmented {
   position: relative;
+  isolation: isolate; /* sus capas internas no salen de él */
   display: grid;
   grid-template-columns: repeat(var(--count, 2), 1fr);
   padding: 0.25rem;
@@ -761,6 +782,7 @@ textarea.field {
 }
 
 .field-group.invalid .field,
+.field-group.invalid .rich,
 .add-input.invalid {
   border-color: var(--danger);
   box-shadow: 0 0 0 1px var(--danger);
@@ -1257,6 +1279,10 @@ textarea.field {
   background: color-mix(in srgb, var(--ink) 10%, transparent);
 }
 
+.cal-day.is-outside {
+  color: color-mix(in srgb, var(--ink) 35%, transparent);
+}
+
 .cal-day.is-today {
   border-color: color-mix(in srgb, var(--ink) 45%, transparent);
 }
@@ -1285,51 +1311,82 @@ textarea.field {
   background: color-mix(in srgb, var(--ink) 8%, transparent);
 }
 
-/* Hora: dos columnas con desplazamiento (horas 00-23 y minutos 00-59) */
+/* Hora: un reloj. Primero la hora (anillo exterior 1-12, interior 13-23 y 00) y luego los minutos. */
 .time-panel {
   right: 0;
   left: auto;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
-  width: 11rem;
-  padding: 0.5rem;
+  width: 15rem;
+  padding: 0.6rem;
 }
 
-.time-col {
-  position: relative;
+.time-head {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-height: 12rem;
-  overflow-y: auto;
-}
-
-.time-col + .time-col {
-  padding-left: 0.5rem;
-  border-left: 1px solid var(--line);
-}
-
-.time-cell {
-  flex: none;
-  padding: 0.4rem 0;
-  font: inherit;
-  font-size: var(--text-s);
+  align-items: center;
+  justify-content: center;
+  gap: 0.1rem;
+  margin-bottom: 0.25rem;
+  font-size: 2rem;
+  font-weight: 300;
   font-variant-numeric: tabular-nums;
-  color: var(--ink);
+}
+
+.time-seg {
+  padding: 0.05rem 0.5rem;
+  font: inherit;
+  color: var(--muted);
   background: transparent;
   border: 0;
-  border-radius: 0.5rem;
+  border-radius: var(--radius-m);
   cursor: pointer;
 }
 
-.time-cell:hover {
+.time-seg.is-active {
+  color: var(--ink);
   background: color-mix(in srgb, var(--ink) 10%, transparent);
 }
 
-.time-cell.is-selected {
-  color: var(--bg);
-  background: var(--ink);
+.dial {
+  display: block;
+  width: 12.5rem;
+  max-width: 100%;
+  margin: 0 auto;
+  cursor: pointer;
+  touch-action: none; /* arrastrar sobre el reloj no desplaza la página */
+  user-select: none;
+}
+
+.dial-face {
+  fill: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+.dial-hand {
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+
+.dial-knob {
+  fill: color-mix(in srgb, var(--ink) 20%, transparent);
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+
+.dial-label {
+  fill: var(--ink);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+
+.dial-label.inner {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.dial-label.is-selected {
+  fill: var(--ink);
+  font-weight: 700;
 }
 
 .date-row .picker {
@@ -1354,7 +1411,7 @@ textarea.field {
   .modal,
   textarea,
   .dropdown-panel,
-  .time-col {
+  .rich-area {
     scrollbar-width: thin;
     scrollbar-color: color-mix(in srgb, var(--ink) 30%, transparent) transparent;
   }
@@ -1363,7 +1420,7 @@ textarea.field {
 .modal::-webkit-scrollbar,
 textarea::-webkit-scrollbar,
 .dropdown-panel::-webkit-scrollbar,
-.time-col::-webkit-scrollbar {
+.rich-area::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
@@ -1372,7 +1429,7 @@ textarea::-webkit-scrollbar,
 .modal::-webkit-scrollbar-button,
 textarea::-webkit-scrollbar-button,
 .dropdown-panel::-webkit-scrollbar-button,
-.time-col::-webkit-scrollbar-button {
+.rich-area::-webkit-scrollbar-button {
   display: none;
   width: 0;
   height: 0;
@@ -1382,7 +1439,7 @@ textarea::-webkit-scrollbar-button,
 .modal::-webkit-scrollbar-track,
 textarea::-webkit-scrollbar-track,
 .dropdown-panel::-webkit-scrollbar-track,
-.time-col::-webkit-scrollbar-track,
+.rich-area::-webkit-scrollbar-track,
 .modal::-webkit-scrollbar-corner,
 textarea::-webkit-scrollbar-corner {
   background: transparent;
@@ -1391,7 +1448,7 @@ textarea::-webkit-scrollbar-corner {
 .modal::-webkit-scrollbar-thumb,
 textarea::-webkit-scrollbar-thumb,
 .dropdown-panel::-webkit-scrollbar-thumb,
-.time-col::-webkit-scrollbar-thumb {
+.rich-area::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--ink) 30%, transparent);
   background-clip: padding-box;
   border: 3px solid transparent;
@@ -1400,7 +1457,7 @@ textarea::-webkit-scrollbar-thumb,
 .modal::-webkit-scrollbar-thumb:hover,
 textarea::-webkit-scrollbar-thumb:hover,
 .dropdown-panel::-webkit-scrollbar-thumb:hover,
-.time-col::-webkit-scrollbar-thumb:hover {
+.rich-area::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--ink) 50%, transparent);
   background-clip: padding-box;
 }
@@ -1416,13 +1473,13 @@ textarea::-webkit-scrollbar-thumb:hover,
 
 textarea::-webkit-scrollbar-track,
 .dropdown-panel::-webkit-scrollbar-track,
-.time-col::-webkit-scrollbar-track {
+.rich-area::-webkit-scrollbar-track {
   margin-block: var(--radius-m);
 }
 
 textarea::-webkit-scrollbar-thumb,
 .dropdown-panel::-webkit-scrollbar-thumb,
-.time-col::-webkit-scrollbar-thumb {
+.rich-area::-webkit-scrollbar-thumb {
   border-radius: var(--radius-m);
 }
 
@@ -1636,11 +1693,6 @@ input[type="number"]::-webkit-outer-spin-button {
   background: var(--tag, var(--accent));
 }
 
-.tag.meta-tomorrow {
-  color: var(--accent);
-  border-color: currentColor;
-}
-
 .list-tabs {
   display: block;
 }
@@ -1785,4 +1837,200 @@ input[type="number"]::-webkit-outer-spin-button {
 
 .options-editor .text-btn {
   align-self: flex-start;
+}
+
+/* 18. Texto enriquecido (negrita, cursiva, tachado y listas) ------------- */
+.rich {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  overflow: hidden;
+}
+
+.rich:focus-within {
+  border-color: color-mix(in srgb, var(--ink) 45%, transparent);
+}
+
+.rich-bar {
+  display: flex;
+  gap: 0.15rem;
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.rich-btn {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  font: inherit;
+  font-size: var(--text-s);
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  transition: color 0.2s var(--ease), background-color 0.2s var(--ease);
+}
+
+.rich-btn:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.rich-btn[aria-pressed="true"] {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 18%, transparent);
+}
+
+.rich-btn .icon {
+  display: grid;
+}
+
+.rich-area {
+  height: 8rem; /* se recuerda la que dejes (ui.js) */
+  min-height: 4.5rem;
+  max-height: 70dvh;
+  padding: 0.7rem 0.9rem;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  resize: vertical;
+  outline: none;
+}
+
+.rich-area ul,
+.rich-area ol {
+  margin: 0;
+  padding-left: 1.3rem;
+}
+
+/* 19. Listas: asa para moverlas, título que las abre y pantalla completa --- */
+.card-head .grip {
+  flex: none;
+  margin-left: -0.5rem;
+  cursor: grab;
+  touch-action: none; /* arrastrar el asa no desplaza la página */
+}
+
+.card-title-btn {
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.card-title-btn:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.list-card-placeholder {
+  padding: 0;
+  background: transparent;
+  border: 1.5px dashed color-mix(in srgb, var(--ink) 30%, transparent);
+}
+
+.list-card.is-dragging {
+  box-shadow: 0 18px 40px rgb(0 0 0 / 0.25);
+}
+
+html.is-dragging,
+html.is-dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+.list-full {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--sheet);
+  animation: full-in 0.2s var(--ease);
+}
+
+body.ready .list-full {
+  transition: background-color 1.2s var(--ease);
+}
+
+.list-full-body {
+  margin-inline: max(var(--gutter), env(safe-area-inset-left, 0px)) max(var(--gutter), env(safe-area-inset-right, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: calc(var(--space-l) + env(safe-area-inset-bottom, 0px));
+}
+
+.list-card-full {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.list-card-full .card-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0;
+  padding: 0.5rem 0;
+  background: var(--sheet);
+}
+
+@keyframes full-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* 20. Resaltado de tareas (apartado de las opciones de lista) ------------- */
+.hl-row {
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.hl-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 2rem;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.hl-line.hl-missing {
+  grid-template-columns: minmax(0, 1fr) 2rem;
+  color: var(--muted);
+}
+
+.hl-value {
+  margin-top: 0.4rem;
+}
+
+.swatch-auto {
+  background: var(--accent);
+}
+
+
+/* 21. Versión de la app: en pequeño, abajo del todo ------------------------ */
+.app-version {
+  position: relative;
+  z-index: 2;
+  margin: auto 0 0;
+  padding: 0 var(--gutter) calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  font-size: 0.7rem;
+  text-align: center;
+  color: var(--muted);
+  opacity: 0.7;
+  transition: opacity 0.3s var(--ease);
+}
+
+.tasks:not(.open) .app-version {
+  opacity: 0;
 }

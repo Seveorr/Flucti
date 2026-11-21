@@ -53,9 +53,17 @@
         <!-- Una tarjeta por lista, con sus tareas dentro (se dibujan desde tasks.js) -->
         <div class="lists-grid" id="lists-grid"></div>
       </div>
+
+      <!-- Versión actual (se cambia en i18n.js: Flucti.version) -->
+      <p class="app-version" id="app-version"></p>
     </section>
 
   </main>
+
+  <!-- Una lista a pantalla completa (se abre pulsando su título) -->
+  <section class="list-full" id="list-full" hidden aria-label="Lista" data-i18n-aria-label="list.dialog.title">
+    <div class="list-full-body" id="list-full-body"></div>
+  </section>
 
   <!-- Ajustes de la aplicación -->
   <dialog class="modal modal-wide" id="settings-dialog" aria-labelledby="settings-title">
@@ -90,6 +98,7 @@
       <div class="task-fields" id="task-fields"></div>
       <p class="form-error" id="task-error" role="alert"></p>
       <button class="primary-btn" id="task-save-btn" type="button" data-i18n="task.saveButton">Guardar</button>
+      <button class="text-btn danger" id="task-delete-btn" type="button" hidden>Eliminar tarea</button>
     </div>
   </dialog>
 
