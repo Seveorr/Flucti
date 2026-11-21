@@ -66,6 +66,7 @@
     date: { type: "date", kinds: ["recurring"] },
     repeat: { type: "recurrence", kinds: ["recurring"], alwaysRequired: true },
     planned: { type: "date", kinds: ["once", "recurring"] },
+    source: { type: "text", kinds: ["once", "recurring"] }, // solo en las dependientes: nombre de la lista de la que viene la tarea
     energy: { type: "select", kinds: ["once", "recurring"] }, // sus opciones se editan como las de cualquier lista desplegable
   };
 
@@ -110,7 +111,7 @@
   const PALETTE = ["#2563eb", "#0d9488", "#16a34a", "#ca8a04", "#ea580c", "#dc2626", "#c026d3", "#64748b"];
   const DEFAULT_COLOR = PALETTE[0];
   const isColor = (v) => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v);
-  const defaultStyle = (id) => (id === "title" ? "title" : id === "description" ? "description" : "meta");
+  const defaultStyle = (id) => (id === "title" ? "title" : id === "description" ? "description" : id === "source" ? "tag" : "meta");
 
   // Color del texto que se lee bien sobre un fondo (blanco u oscuro según lo claro que sea).
   function inkFor(color) {
@@ -449,6 +450,7 @@
     if (hasParam(params, "planned")) criteria.push({ id: "planned", label: t("param.planned"), kind: "date" });
     if (hasParam(params, "energy")) criteria.push({ id: "energy", label: t("param.energy"), kind: "level" });
     criteria.push({ id: "title", label: t("param.title"), kind: "text" }, { id: "created", label: t("sort.created"), kind: "created" });
+    if (hasParam(params, "source")) criteria.push({ id: "source", label: t("param.source"), kind: "text" });
     for (const p of allParams(params)) if (!p.builtin) criteria.push({ id: p.id, label: p.name, kind: kindOfType(p.type) });
     return criteria;
   }
@@ -463,6 +465,8 @@
         return selectRank(params.get("energy"), task.values.energy);
       case "title":
         return task.title;
+      case "source":
+        return task.values.source;
       case "created":
         return task.createdAt;
       default: {
@@ -649,13 +653,13 @@
   // Los parámetros de una dependiente no se crean: son todos los distintos que tienen sus listas de origen
   // (el vencimiento y la fecha de las recurrentes cuentan como uno). Se recalculan al cambiar los orígenes.
   function syncLinkedParams(list, lists = state.lists) {
-    const out = [{ ...DEFAULT_PARAMS[0] }];
-    const byKey = new Map([["title", out[0]]]);
+    const out = [{ ...DEFAULT_PARAMS[0] }, { id: "source", once: true, recurring: true, required: false }]; // título y lista de origen
+    const byKey = new Map([["title", out[0]], ["source", out[1]]]);
     for (const link of list.links) {
       const source = lists.find((l) => l.id === link.listId && l.kind === "own");
       if (!source) continue;
       for (const p of source.params) {
-        if (p.id === "repeat" || p.id === "title") continue;
+        if (p.id === "repeat" || p.id === "title" || p.id === "source") continue;
         const def = BUILTIN[p.id];
         const id = p.id === "date" ? "due" : p.id;
         const type = def ? def.type : p.type;
@@ -699,7 +703,7 @@
       const maps = infos.map((info) => [info, sourceInfos.find((p) => paramKey(p) === paramKey(info)) || null]);
       for (const real of state.tasks) {
         if (real.listId !== source.id) continue;
-        const values = {};
+        const values = { source: listName(source) }; // cada tarea lleva el nombre de la lista de la que viene
         let title = real.title;
         for (const [info, from] of maps) {
           if (!from) continue;

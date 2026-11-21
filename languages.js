@@ -251,6 +251,7 @@ const TRANSLATIONS = {
   "list.tabs": { es: "Apartados de la lista", ca: "Apartats de la llista", en: "List sections", de: "Abschnitte der Liste" },
   "list.tab.params": { es: "Parámetros", ca: "Paràmetres", en: "Parameters", de: "Parameter" },
   "list.tab.layout": { es: "Aspecto", ca: "Aspecte", en: "Look", de: "Darstellung" },
+  "param.source": { es: "Lista", ca: "Llista", en: "List", de: "Liste" },
   "list.tab.sort": { es: "Orden", ca: "Ordre", en: "Order", de: "Reihenfolge" },
   "list.kind.own": { es: "Lista de tareas independiente", ca: "Llista de tasques independent", en: "Independent task list", de: "Unabhängige Aufgabenliste" },
   "list.kind.own.hint": { es: "Tus propias tareas: aquí puedes añadir tareas nuevas.", ca: "Les teves pròpies tasques: aquí pots afegir-ne de noves.", en: "Your own tasks: add new ones here.", de: "Eigene Aufgaben: hier kannst du neue hinzufügen." },
