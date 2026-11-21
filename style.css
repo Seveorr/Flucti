@@ -1697,6 +1697,19 @@ input[type="number"]::-webkit-outer-spin-button {
   display: block;
 }
 
+/* Los apartados reparten todo el ancho; si el texto no cabe, pasa a dos líneas (nunca se corta ni se desplaza). */
+.list-tabs .segmented {
+  grid-template-columns: repeat(var(--count, 2), minmax(0, 1fr));
+}
+
+.list-tabs .segmented-option {
+  padding: 0.5rem 0.15rem;
+  font-size: clamp(0.66rem, 2.9vw, var(--text-s));
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+
 #list-body > .list-tabs + * {
   margin-top: var(--space-m);
 }
@@ -2033,4 +2046,24 @@ body.ready .list-full {
 
 .tasks:not(.open) .app-version {
   opacity: 0;
+}
+
+
+/* 22. Listas dependientes y menú "Nuevo" ----------------------------------- */
+.link-block {
+  margin-top: var(--space-s);
+  padding-top: var(--space-s);
+  border-top: 1px solid var(--line);
+}
+
+.menu-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.menu-text small {
+  font-size: var(--text-s);
+  color: var(--muted);
 }

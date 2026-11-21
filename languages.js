@@ -43,7 +43,8 @@ const TRANSLATIONS = {
 
   /* Listas (en la pantalla de inicio y en la hoja de tareas) */
   "list.default": { es: "Actual", ca: "Actual", en: "Current", de: "Aktuell" },
-  "list.add": { es: "Crear lista", ca: "Crea una llista", en: "Create list", de: "Liste erstellen" },
+  "list.add": { es: "Nuevo", ca: "Nou", en: "New", de: "Neu" },
+  "list.new": { es: "Nuevo", ca: "Nou", en: "New", de: "Neu" },
   "list.new.placeholder": { es: "Nueva lista", ca: "Nova llista", en: "New list", de: "Neue Liste" },
   "list.options": { es: "Opciones de la lista", ca: "Opcions de la llista", en: "List options", de: "Listenoptionen" },
 
@@ -251,7 +252,18 @@ const TRANSLATIONS = {
   "list.tab.params": { es: "Parámetros", ca: "Paràmetres", en: "Parameters", de: "Parameter" },
   "list.tab.layout": { es: "Aspecto", ca: "Aspecte", en: "Look", de: "Darstellung" },
   "list.tab.sort": { es: "Orden", ca: "Ordre", en: "Order", de: "Reihenfolge" },
-  "list.tab.highlight": { es: "Resaltado", ca: "Ressaltat", en: "Highlight", de: "Hervorhebung" },
+  "list.kind.own": { es: "Lista de tareas independiente", ca: "Llista de tasques independent", en: "Independent task list", de: "Unabhängige Aufgabenliste" },
+  "list.kind.own.hint": { es: "Tus propias tareas: aquí puedes añadir tareas nuevas.", ca: "Les teves pròpies tasques: aquí pots afegir-ne de noves.", en: "Your own tasks: add new ones here.", de: "Eigene Aufgaben: hier kannst du neue hinzufügen." },
+  "list.kind.linked": { es: "Lista de tareas dependiente", ca: "Llista de tasques dependent", en: "Dependent task list", de: "Abhängige Aufgabenliste" },
+  "list.kind.linked.hint": { es: "Reúne tareas de otras listas independientes que cumplan los requisitos que elijas.", ca: "Reuneix tasques d'altres llistes independents que compleixin els requisits que triïs.", en: "Gathers tasks from other independent lists that meet the requirements you choose.", de: "Sammelt Aufgaben aus anderen unabhängigen Listen, die deine Bedingungen erfüllen." },
+  "list.kind.linked.short": { es: "dependiente", ca: "dependent", en: "dependent", de: "abhängig" },
+  "list.tab.source": { es: "Origen", ca: "Origen", en: "Source", de: "Quelle" },
+  "link.hint": { es: "Marca de qué listas vienen las tareas. Los parámetros de esta lista son todos los distintos que tengan esas listas, y con ellos configuras los requisitos, el aspecto y el orden. Las tareas se completan y se editan como en su lista.", ca: "Marca de quines llistes vénen les tasques. Els paràmetres d'aquesta llista són tots els diferents que tinguin aquestes llistes, i amb ells configures els requisits, l'aspecte i l'ordre. Les tasques es completen i s'editen com a la seva llista.", en: "Mark which lists the tasks come from. This list's parameters are all the different ones those lists have, and you use them to set the requirements, look and order. Tasks are completed and edited as in their own list.", de: "Markiere, aus welchen Listen die Aufgaben kommen. Die Parameter dieser Liste sind alle unterschiedlichen Parameter dieser Listen; damit stellst du Bedingungen, Darstellung und Reihenfolge ein. Aufgaben werden wie in ihrer Liste erledigt und bearbeitet." },
+  "link.lists": { es: "Listas de origen", ca: "Llistes d'origen", en: "Source lists", de: "Quelllisten" },
+  "link.filter": { es: "Requisitos", ca: "Requisits", en: "Requirements", de: "Bedingungen" },
+  "link.filter.hint": { es: "Solo salen las tareas que cumplan los requisitos. Sin requisitos, salen todas.", ca: "Només surten les tasques que compleixin els requisits. Sense requisits, surten totes.", en: "Only tasks that meet the requirements are shown. With none, all tasks are shown.", de: "Es werden nur Aufgaben angezeigt, die die Bedingungen erfüllen. Ohne Bedingungen alle." },
+  "link.empty": { es: "Elige en las opciones de qué listas salen las tareas.", ca: "Tria a les opcions de quines llistes surten les tasques.", en: "Choose in the options which lists the tasks come from.", de: "Wähle in den Optionen, aus welchen Listen die Aufgaben kommen." },
+  "list.tab.highlight": { es: "Resaltado", ca: "Ressaltat", en: "Highlight", de: "Markierung" },
   "list.highlight.hint": { es: "Las tareas que cumplan las condiciones se resaltan con el color que elijas. Sin condiciones, no se resalta ninguna.", ca: "Les tasques que compleixin les condicions es ressalten amb el color que triïs. Sense condicions, no es ressalta cap.", en: "Tasks that meet the conditions are highlighted in the colour you choose. With no conditions, nothing is highlighted.", de: "Aufgaben, die die Bedingungen erfüllen, werden in der gewählten Farbe hervorgehoben. Ohne Bedingungen wird nichts hervorgehoben." },
   "hl.add": { es: "Añadir condición", ca: "Afegeix una condició", en: "Add condition", de: "Bedingung hinzufügen" },
   "hl.remove": { es: "Quitar condición", ca: "Treu la condició", en: "Remove condition", de: "Bedingung entfernen" },
@@ -626,31 +638,6 @@ const TRANSLATIONS = {
     ca: "Ara, cada llista pot tenir els seus propis paràmetres personalitzats i s'ha millorat la visualització dels mateixos a la interfície d'usuari.",
     en: "Now, each list can have its own custom parameters and the visualization of these has been improved in the user interface.",
     de: "Jetzt kann jede Liste ihre eigenen benutzerdefinierten Parameter haben und die Darstellung dieser wurde in der Benutzeroberfläche verbessert."
-  },
-
-  "about.versions.v007.label": {
-    es: "v0.1.6-beta",
-    ca: "v0.1.6-beta",
-    en: "v0.1.6-beta",
-    de: "v0.1.6-beta"
-  },
-  "about.versions.v007.date": {
-    es: "21/11/2026",
-    ca: "21/11/2026",
-    en: "21/11/2026",
-    de: "21/11/2026"
-  },
-  "about.versions.v007.title": {
-    es: "Movimiento de listas, resalto de tareas y correción de estilo y errores",
-    ca: "Moviment de llistes, ressaltat de tasques i correcció d'estil i errors",
-    en: "List movement, task highlighting and style/bug fixes",
-    de: "Listenbewegung, Aufgabenhervorhebung und Stil-/Fehlerkorrekturen"
-  },
-  "about.versions.v007.body": {
-    es: "Ahora puedes mover libremente las listas por el menú principal y resaltar tareas en específico. También se han realizado mejoras en el estilo de la aplicación y se han corregido errores menores.",
-    ca: "Ara pots moure lliurement les llistes pel menú principal i ressaltar tasques en específic. També s'han realitzat millores en l'estil de l'aplicació i s'han corregit errors menors.",
-    en: "Now you can freely move lists through the main menu and highlight specific tasks. Additionally, improvements have been made to the app's style and minor bugs have been fixed.",
-    de: "Jetzt kannst du Listen frei durch das Hauptmenü bewegen und bestimmte Aufgaben hervorheben. Außerdem wurden Verbesserungen am Stil der Anwendung vorgenommen und kleinere Fehler behoben."
   },
 
 "about.me.title": {

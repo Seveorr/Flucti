@@ -5,7 +5,11 @@
 
    Datos (localStorage "flucti:data:v1"):
      params: parámetros por defecto: los que reciben las listas nuevas
-     lists:  listas { id, name, hidden, showCompleted, sort, params, layout, highlight }; name null = nombre por defecto ("Actual")
+     lists:  listas { id, kind, name, hidden, showCompleted, sort, params, layout, highlight, links, filter }; name null = nombre por defecto ("Actual")
+             kind: "own" (independiente: tiene sus propias tareas) o "linked" (dependiente: no guarda tareas, muestra
+             las de otras listas independientes)
+             links: (dependientes) [{ listId }]; sus parámetros no se crean: son todos los distintos de las listas de origen
+             filter: (dependientes) { match, conditions } sobre los parámetros de esta lista
              params: los parámetros de esa lista (cada una tiene los suyos)
              layout: cómo se ve cada parámetro en la lista y en qué orden { id, style, color }
              highlight: qué tareas se resaltan { match, color, blink, conditions: [{ param, op, value }] }
@@ -118,10 +122,13 @@
      Estado: carga, normalización, copia de seguridad, migración y guardado
      ------------------------------------------------------------------------ */
   // Una lista nueva empieza con los parámetros por defecto (una copia: cambiar los de una lista no toca los demás).
-  function makeList({ id = uid(), name = null, params = DEFAULT_PARAMS } = {}) {
+  function makeList({ id = uid(), name = null, params = DEFAULT_PARAMS, kind = "own" } = {}) {
     return {
       id,
+      kind,
       name,
+      links: [],
+      filter: { match: "all", conditions: [] },
       hidden: false,
       showCompleted: false,
       sort: clone(DEFAULT_SORT),
@@ -206,13 +213,34 @@
   }
 
   // Resaltado guardado de una lista; las listas anteriores a esta función empiezan con el resaltado por defecto.
-  function normalizeHighlight(raw) {
-    if (!raw || typeof raw !== "object") return clone(DEFAULT_HIGHLIGHT);
+  function normalizeConditions(raw) {
     const ops = new Set(Object.values(HL_OPS).flat());
-    const conditions = (Array.isArray(raw.conditions) ? raw.conditions : [])
+    return (Array.isArray(raw) ? raw : [])
       .filter((c) => c && typeof c.param === "string" && ops.has(c.op))
       .map((c) => ({ param: c.param, op: c.op, value: c.value === undefined || c.value === null ? "" : c.value }));
-    return { match: raw.match === "any" ? "any" : "all", color: isColor(raw.color) ? raw.color : "auto", blink: raw.blink === true, conditions };
+  }
+
+  function normalizeHighlight(raw) {
+    if (!raw || typeof raw !== "object") return clone(DEFAULT_HIGHLIGHT);
+    return { match: raw.match === "any" ? "any" : "all", color: isColor(raw.color) ? raw.color : "auto", blink: raw.blink === true, conditions: normalizeConditions(raw.conditions) };
+  }
+
+  // Requisitos de una lista dependiente: sin condiciones salen todas las tareas de las listas de origen.
+  function normalizeFilter(raw) {
+    const r = raw && typeof raw === "object" ? raw : {};
+    return { match: r.match === "any" ? "any" : "all", conditions: normalizeConditions(r.conditions) };
+  }
+
+  // Listas de origen de una dependiente.
+  function normalizeLinks(raw) {
+    const links = [];
+    const seen = new Set();
+    for (const k of Array.isArray(raw) ? raw : []) {
+      if (!k || typeof k.listId !== "string" || seen.has(k.listId)) continue;
+      seen.add(k.listId);
+      links.push({ listId: k.listId });
+    }
+    return links;
   }
 
   // Aspecto de los parámetros de la lista, en el orden en que se ven. Los parámetros que aún no tienen
@@ -235,6 +263,9 @@
       .filter((l) => l && typeof l.id === "string")
       .map((l) => ({
         id: l.id,
+        kind: l.kind === "linked" ? "linked" : "own",
+        links: l.kind === "linked" ? normalizeLinks(l.links) : [],
+        filter: normalizeFilter(l.filter),
         name: typeof l.name === "string" && l.name.trim() ? l.name : null,
         hidden: l.hidden === true,
         showCompleted: l.showCompleted === true,
@@ -247,8 +278,12 @@
         highlight: normalizeHighlight(l.highlight),
       }));
     if (!lists.length) lists.push(base.lists[0]);
+    if (!lists.some((l) => l.kind === "own")) lists.unshift(base.lists[0]); // siempre hay una lista independiente
     if (lists.every((l) => l.hidden)) lists[0].hidden = false;
     lists.forEach((list) => layoutOf(list));
+    const own = lists.filter((l) => l.kind === "own"); // solo estas guardan tareas
+    lists.forEach((list) => (list.links = list.links.filter((k) => own.some((o) => o.id === k.listId))));
+    lists.filter((l) => l.kind === "linked").forEach((list) => syncLinkedParams(list, lists));
 
     // Las tareas nunca se descartan: si algún dato falta se rellena con un valor por defecto.
     const tasks = [];
@@ -257,7 +292,7 @@
       const recurring = x.kind === "recurring" && x.recurrence && typeof x.recurrence === "object";
       const task = {
         id: x.id,
-        listId: lists.some((l) => l.id === x.listId) ? x.listId : lists[0].id,
+        listId: own.some((l) => l.id === x.listId) ? x.listId : own[0].id,
         kind: recurring ? "recurring" : "once",
         title: typeof x.title === "string" && x.title.trim() ? x.title : "—",
         values: x.values && typeof x.values === "object" ? x.values : {},
@@ -358,7 +393,8 @@
      ------------------------------------------------------------------------ */
   const visibleLists = () => state.lists.filter((l) => !l.hidden);
   const listName = (list) => list.name || t("list.default");
-  const listById = (id) => state.lists.find((l) => l.id === id) || state.lists[0];
+  const listById = (id) => state.lists.find((l) => l.id === id) || state.lists.find((l) => l.kind === "own");
+  const ownLists = () => state.lists.filter((l) => l.kind === "own");
   const hasParam = (params, id) => params.some((p) => p.id === id);
   const recurringAvailable = (params) => hasParam(params, "repeat"); // sin regla de repetición no hay tareas recurrentes nuevas
 
@@ -600,6 +636,89 @@
   }
 
   /* ------------------------------------------------------------------------
+     Listas dependientes
+     No guardan tareas: muestran las de las listas independientes que enlazan. Cada tarea se convierte en una
+     "tarea virtual" con los parámetros de la dependiente (según lo que el usuario eligió en cada origen) y
+     sobre ella se aplican los requisitos, el orden, el aspecto y el resaltado. Completarla o editarla actúa
+     sobre la tarea real (task.real).
+     ------------------------------------------------------------------------ */
+  // Dos parámetros de listas distintas son "el mismo" si son el mismo predefinido, la misma lista desplegable
+  // (mismo id: pasa al añadirlo con el + de otra lista) o tienen el mismo tipo y nombre.
+  const paramKey = (info) => (info.builtin || info.type === "select" ? info.id : `${info.type}:${info.name.trim().toLowerCase()}`);
+
+  // Los parámetros de una dependiente no se crean: son todos los distintos que tienen sus listas de origen
+  // (el vencimiento y la fecha de las recurrentes cuentan como uno). Se recalculan al cambiar los orígenes.
+  function syncLinkedParams(list, lists = state.lists) {
+    const out = [{ ...DEFAULT_PARAMS[0] }];
+    const byKey = new Map([["title", out[0]]]);
+    for (const link of list.links) {
+      const source = lists.find((l) => l.id === link.listId && l.kind === "own");
+      if (!source) continue;
+      for (const p of source.params) {
+        if (p.id === "repeat" || p.id === "title") continue;
+        const def = BUILTIN[p.id];
+        const id = p.id === "date" ? "due" : p.id;
+        const type = def ? def.type : p.type;
+        const key = def || type === "select" ? id : `${type}:${p.name.trim().toLowerCase()}`;
+        const options = type === "select" ? p.options || (p.id === "energy" ? DEFAULT_ENERGY : []) : null;
+        let entry = byKey.get(key);
+        if (!entry) {
+          entry = def ? { id, once: true, recurring: true, required: false } : { id, type, name: p.name, once: true, recurring: true, required: false };
+          if (options) entry.options = [];
+          byKey.set(key, entry);
+          out.push(entry);
+        }
+        if (options) for (const o of options) if (!entry.options.some((x) => x.id === o.id)) entry.options.push(clone(o));
+      }
+    }
+    list.params = out;
+  }
+
+  function convertValue(raw, from, to) {
+    if (raw === undefined || raw === null) return undefined;
+    if (to.type === "date") return raw && raw.date ? { date: raw.date, time: raw.time || "" } : undefined;
+    if (to.type === "select") {
+      const options = to.options || [];
+      const fromOption = (from.options || []).find((o) => o.id === raw);
+      const match = options.find((o) => o.id === raw) || (fromOption && options.find((o) => o.label.toLowerCase() === fromOption.label.toLowerCase()));
+      return match ? match.id : undefined;
+    }
+    if (to.type === "text") return from.type === "textarea" ? richPlain(raw) : String(raw);
+    return raw;
+  }
+
+  function tasksOfLinked(list) {
+    const infos = allParams(list.params);
+    const conditionInfos = new Map(highlightParams(list.params).map((p) => [p.id, p]));
+    const active = list.filter.conditions.filter((c) => conditionInfos.has(c.param));
+    const out = [];
+    for (const link of list.links) {
+      const source = state.lists.find((l) => l.id === link.listId && l.kind === "own");
+      if (!source) continue;
+      const sourceInfos = highlightParams(source.params);
+      const maps = infos.map((info) => [info, sourceInfos.find((p) => paramKey(p) === paramKey(info)) || null]);
+      for (const real of state.tasks) {
+        if (real.listId !== source.id) continue;
+        const values = {};
+        let title = real.title;
+        for (const [info, from] of maps) {
+          if (!from) continue;
+          const v = convertValue(rawValue(real, from.id), from, info);
+          if (info.id === "title") {
+            if (v) title = v;
+          } else if (hasValue(v)) {
+            values[info.id] = v;
+          }
+        }
+        const virtual = { id: real.id, real, listId: list.id, kind: "once", title, values, createdAt: real.createdAt, done: real.done === true, completedAt: real.completedAt };
+        const test = (c) => conditionMet(virtual, c, conditionInfos.get(c.param));
+        if (!active.length || (list.filter.match === "any" ? active.some(test) : active.every(test))) out.push(virtual);
+      }
+    }
+    return out;
+  }
+
+  /* ------------------------------------------------------------------------
      Tareas en pantalla
      Cada lista decide cómo se ve cada parámetro y en qué orden (list.layout: { id, style, color }):
      título, descripción, dato (texto pequeño), etiqueta, etiqueta de color u oculto.
@@ -694,8 +813,9 @@
       checked: task.done === true,
       "aria-label": t("task.complete", { name: task.title }),
       onchange: (event) => {
-        if (task.done && !event.target.checked) restoreTask(task);
-        else if (!task.done && event.target.checked) completeTask(task, item);
+        const real = task.real || task; // en una lista dependiente, la tarea de verdad es la de su lista de origen
+        if (task.done && !event.target.checked) restoreTask(real);
+        else if (!task.done && event.target.checked) completeTask(real, item, list);
       },
     });
 
@@ -718,15 +838,15 @@
       }
     }
 
-    const body = h("div", { class: "task-body", onclick: () => openTaskDialogForEdit(task) }, blocks);
+    const body = h("div", { class: "task-body", onclick: () => openTaskDialogForEdit(task.real || task) }, blocks);
     item.append(h("div", { class: "task-row" }, h("div", { class: "task-content" }, checkbox, body)));
     return item;
   }
 
   // Las tareas únicas completadas se marcan (no se borran) y se muestran u ocultan según la lista.
-  function completeTask(task, item) {
+  function completeTask(task, item, viewList) {
     item.classList.add("done");
-    const list = state.lists.find((l) => l.id === task.listId);
+    const list = viewList || state.lists.find((l) => l.id === task.listId); // la lista en la que se está viendo
 
     if (task.kind === "recurring") {
       advanceRecurring(task, todayString()); // vuelve a aparecer con su siguiente fecha
@@ -824,10 +944,10 @@
 
   // full: la lista a pantalla completa (se abre pulsando su título).
   function buildCard(list, enteringId, full = false) {
-    const pending = sortTasks(state.tasks.filter((x) => x.listId === list.id && !x.done), list.sort, list.params);
-    const completed = list.showCompleted
-      ? state.tasks.filter((x) => x.listId === list.id && x.done).sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0))
-      : [];
+    const linked = list.kind === "linked";
+    const items = linked ? tasksOfLinked(list) : state.tasks.filter((x) => x.listId === list.id);
+    const pending = sortTasks(items.filter((x) => !x.done), list.sort, list.params);
+    const completed = list.showCompleted ? items.filter((x) => x.done).sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0)) : [];
 
     const count = pending.length ? h("span", { class: "card-count", text: String(pending.length) }) : null;
     const options = h(
@@ -872,9 +992,9 @@
       "section",
       { class: `list-card${full ? " list-card-full" : ""}`, dataset: { list: list.id }, "aria-label": listName(list) },
       head,
-      addRow(list),
+      linked ? null : addRow(list),
       h("ul", { class: "list" }, pending.map((x) => taskElement(x, list, x.id === enteringId))),
-      h("p", { class: "card-empty", text: t("task.empty"), hidden: pending.length > 0 }),
+      h("p", { class: "card-empty", text: t(linked && !list.links.length ? "link.empty" : "task.empty"), hidden: pending.length > 0 }),
       completed.length
         ? h(
           "div",
@@ -1011,13 +1131,44 @@
     if (event.key === "Escape" && expandedId && [...Flucti.openDialogs].every((d) => d === fullView)) closeFull();
   });
 
-  function createList(name) {
-    state.lists.push(makeList({ name, params: state.params })); // empieza con los parámetros por defecto
+  function createList(name, kind = "own") {
+    // Una independiente empieza con los parámetros por defecto; una dependiente, con los de sus listas de origen.
+    const list = makeList({ name, kind, params: kind === "linked" ? DEFAULT_PARAMS.slice(0, 1) : state.params });
+    if (kind === "linked") syncLinkedParams(list);
+    state.lists.push(list);
     saveState();
     renderGrid();
+    openListDialog(list.id); // se abren sus opciones: en una dependiente, lo primero es elegir de qué listas salen las tareas
   }
 
-  // Última "tarjeta": un recuadro para crear otra lista (se convierte en un campo para el nombre).
+  // Última "tarjeta": el botón "Nuevo". Abre un menú (como el de ajustes) para elegir el tipo de lista y luego
+  // se escribe su nombre en la propia tarjeta.
+  let newKind = "own";
+  const newDialog = $("new-dialog");
+
+  function renderNewMenu() {
+    $("new-body").replaceChildren(
+      ...["own", "linked"].map((kind) =>
+        h(
+          "button",
+          {
+            class: "menu-row",
+            type: "button",
+            onclick: () => {
+              newDialog.close();
+              newKind = kind;
+              addingList = true;
+              focusedKey = NEW_KEY;
+              renderGrid();
+            },
+          },
+          h("span", { class: "menu-text" }, h("span", { text: t(`list.kind.${kind}`) }), h("small", { text: t(`list.kind.${kind}.hint`) })),
+          icon("chevron", 18)
+        )
+      )
+    );
+  }
+
   function newListCard() {
     if (!addingList) {
       return h(
@@ -1026,14 +1177,14 @@
           class: "list-card list-card-add",
           type: "button",
           "aria-label": t("list.add"),
+          "aria-haspopup": "dialog",
           onclick: () => {
-            addingList = true;
-            focusedKey = NEW_KEY;
-            renderGrid();
+            renderNewMenu();
+            Flucti.openDialog(newDialog);
           },
         },
         icon("plus", 20),
-        h("span", { text: t("list.new.placeholder") })
+        h("span", { text: t("list.new") })
       );
     }
     const input = h("input", {
@@ -1053,7 +1204,7 @@
       focusedKey = null;
       const name = cleanTitle(input.value);
       newListDraft = "";
-      if (create && name) createList(name);
+      if (create && name) createList(name, newKind);
       else renderGrid();
     };
     input.addEventListener("keydown", (event) => {
@@ -1110,6 +1261,7 @@
 
   function renderGrid(enteringId) {
     rendering = true;
+    state.lists.forEach((l) => l.kind === "linked" && syncLinkedParams(l)); // por si cambiaron los parámetros de sus orígenes
     const restore = focusedKey;
     inputs.clear();
     newListInput = null;
@@ -1809,7 +1961,7 @@
     // Los parámetros propios que ya existen en otras listas (o en los de por defecto) se ofrecen con un "+".
     const suggestions = [];
     const seen = new Set(params.map((p) => p.id));
-    for (const source of [...state.lists.map((l) => l.params), state.params]) {
+    for (const source of [...ownLists().map((l) => l.params), state.params]) {
       for (const p of source) {
         if (BUILTIN[p.id] || seen.has(p.id)) continue;
         seen.add(p.id);
@@ -1903,6 +2055,7 @@
             "button",
             { class: "list-open", type: "button", "aria-label": `${t("list.edit")}: ${listName(list)}`, onclick: () => openListDialog(list.id) },
             h("span", { class: "list-open-name", text: listName(list) }),
+            list.kind === "linked" ? h("small", { text: t("list.kind.linked.short") }) : null,
             list.hidden ? h("small", { text: t("list.hidden") }) : null,
             icon("chevron", 16)
           )
@@ -2013,13 +2166,6 @@
         dateKey: "about.versions.v006.date",
         titleKey: "about.versions.v006.title",
         bodyKey: "about.versions.v006.body",
-        openByDefault: false
-      },
-      {
-        versionKey: "about.versions.v007.label",
-        dateKey: "about.versions.v007.date",
-        titleKey: "about.versions.v007.title",
-        bodyKey: "about.versions.v007.body",
         openByDefault: false
       }
     ];
@@ -2140,12 +2286,12 @@
      ------------------------------------------------------------------------ */
   let editingListId = null;
   let deleteArmed = false;
-  let listTab = "params"; // "params", "layout" o "sort"
+  let listTab = "params"; // "source" (solo dependientes), "params", "layout", "sort" o "highlight"
 
-  function openListDialog(id) {
+  function openListDialog(id, tab) {
     editingListId = id;
     deleteArmed = false;
-    listTab = "params";
+    listTab = tab || (listById(id).kind === "linked" ? "source" : "params");
     listScope.form = null;
     renderListDialog();
     Flucti.openDialog($("list-dialog"));
@@ -2220,6 +2366,7 @@
   function deleteList(id) {
     if (expandedId === id) closeFull();
     state.lists = state.lists.filter((l) => l.id !== id);
+    state.lists.forEach((l) => (l.links = l.links.filter((k) => k.listId !== id))); // las dependientes dejan de enlazarla
     state.tasks = state.tasks.filter((x) => x.listId !== id);
     titleDrafts.delete(id);
     if (!visibleLists().length) state.lists[0].hidden = false;
@@ -2349,20 +2496,10 @@
     );
   }
 
-  // Resaltado: condiciones sobre los parámetros de la lista, color y parpadeo.
-  function highlightSection(list) {
-    const hl = list.highlight;
-    const params = highlightParams(list.params);
+  // Editor de condiciones sobre parámetros (resaltado y requisitos de las dependientes). "target" es
+  // { match, conditions }; devuelve las filas, el botón de añadir y, con varias, "todas o alguna".
+  function conditionsEditor(target, params, rebuild, apply) {
     const infos = new Map(params.map((p) => [p.id, p]));
-    const rebuild = () => {
-      saveState();
-      renderGrid();
-      renderListDialog();
-    };
-    const apply = () => {
-      saveState();
-      renderGrid();
-    };
     const opsFor = (info) => HL_OPS[hlGroup(info.type)] || [];
 
     const conditionRow = (cond) => {
@@ -2372,7 +2509,7 @@
         type: "button",
         "aria-label": t("hl.remove"),
         onclick: () => {
-          hl.conditions.splice(hl.conditions.indexOf(cond), 1);
+          target.conditions.splice(target.conditions.indexOf(cond), 1);
           rebuild();
         },
       }, icon("close", 16));
@@ -2442,11 +2579,8 @@
       return h("div", { class: "hl-row" }, h("div", { class: "hl-line" }, paramSelect, opSelect, remove), value ? h("div", { class: "hl-value" }, value) : null);
     };
 
-    return h(
-      "section",
-      { class: "settings-section" },
-      h("p", { class: "settings-hint", text: t("list.highlight.hint") }),
-      hl.conditions.map(conditionRow),
+    return [
+      ...target.conditions.map(conditionRow),
       h("button", {
         class: "text-btn",
         type: "button",
@@ -2454,26 +2588,46 @@
         onclick: () => {
           const first = params.find((p) => p.id === "due") || params[0];
           const op = opsFor(first)[0];
-          hl.conditions.push({ param: first.id, op, value: defaultConditionValue(op, first) });
+          target.conditions.push({ param: first.id, op, value: defaultConditionValue(op, first) });
           rebuild();
         },
       }),
-      hl.conditions.length > 1
+      target.conditions.length > 1
         ? h(
           "div",
           { class: "field-group" },
           h("span", { class: "field-label", text: t("hl.match.label") }),
           dropdown({
-            value: hl.match,
+            value: target.match,
             label: t("hl.match.label"),
             options: [{ value: "all", label: t("hl.match.all") }, { value: "any", label: t("hl.match.any") }],
             onChange: (match) => {
-              hl.match = match;
+              target.match = match;
               apply();
             },
           })
         )
         : null,
+    ];
+  }
+
+  // Resaltado: condiciones sobre los parámetros de la lista, color y parpadeo.
+  function highlightSection(list) {
+    const hl = list.highlight;
+    const rebuild = () => {
+      saveState();
+      renderGrid();
+      renderListDialog();
+    };
+    const apply = () => {
+      saveState();
+      renderGrid();
+    };
+    return h(
+      "section",
+      { class: "settings-section" },
+      h("p", { class: "settings-hint", text: t("list.highlight.hint") }),
+      ...conditionsEditor(hl, highlightParams(list.params), rebuild, apply),
       h(
         "div",
         { class: "field-group" },
@@ -2495,6 +2649,53 @@
           },
         }),
         t("hl.blink")
+      )
+    );
+  }
+
+  // Origen de una lista dependiente: de qué listas salen las tareas y qué requisitos tienen que cumplir.
+  // Sus parámetros son todos los distintos de esas listas, y con ellos se configuran requisitos, aspecto y orden.
+  function sourceSection(list) {
+    const rebuild = () => {
+      saveState();
+      renderGrid();
+      renderListDialog();
+    };
+    const apply = () => {
+      saveState();
+      renderGrid();
+    };
+
+    const picks = ownLists().map((source) =>
+      h(
+        "label",
+        { class: "check-row" },
+        h("input", {
+          type: "checkbox",
+          checked: list.links.some((k) => k.listId === source.id),
+          onchange: (event) => {
+            if (event.target.checked) list.links.push({ listId: source.id });
+            else list.links = list.links.filter((k) => k.listId !== source.id);
+            syncLinkedParams(list);
+            rebuild();
+          },
+        }),
+        listName(source)
+      )
+    );
+
+    return h(
+      "section",
+      { class: "settings-section" },
+      h("p", { class: "settings-hint", text: t("link.hint") }),
+      h("p", { class: "field-label", text: t("link.lists") }),
+      h("div", { class: "check-group stacked" }, picks),
+      h(
+        "div",
+        { class: "link-block" },
+        h("p", { class: "field-label", text: t("link.filter") }),
+        h("p", { class: "settings-hint", text: t("link.filter.hint") }),
+        ...conditionsEditor(list.filter, highlightParams(list.params), rebuild, apply)
       )
     );
   }
@@ -2527,10 +2728,13 @@
       },
     });
 
+    const linked = list.kind === "linked";
+    if (!linked && listTab === "source") listTab = "params";
+    if (linked && listTab === "params") listTab = "source"; // una dependiente no tiene parámetros propios
     const tabs = segmented({
       label: t("list.tabs"),
       options: [
-        { value: "params", label: t("list.tab.params") },
+        linked ? { value: "source", label: t("list.tab.source") } : { value: "params", label: t("list.tab.params") },
         { value: "layout", label: t("list.tab.layout") },
         { value: "sort", label: t("list.tab.sort") },
         { value: "highlight", label: t("list.tab.highlight") },
@@ -2544,7 +2748,9 @@
     });
 
     const section =
-      listTab === "layout"
+      listTab === "source"
+        ? sourceSection(list)
+        : listTab === "layout"
         ? layoutSection(list)
         : listTab === "sort"
           ? sortSection(list)
@@ -2591,7 +2797,7 @@
       h("button", {
         class: "text-btn danger",
         type: "button",
-        disabled: state.lists.length === 1,
+        disabled: state.lists.length === 1 || (list.kind === "own" && ownLists().length === 1), // siempre queda una independiente
         text: deleteArmed ? t("list.delete.confirm") : t("list.delete"),
         onclick: () => {
           if (deleteArmed) {
@@ -2621,6 +2827,8 @@
   Flucti.bindDialog(settingsDialog);
   Flucti.bindDialog(listDialog);
   Flucti.bindDialog(taskDialog);
+  Flucti.bindDialog(newDialog);
+  $("new-close").addEventListener("click", () => newDialog.close());
 
   $("menu-btn").addEventListener("click", () => {
     settingsView = null;
@@ -2678,6 +2886,7 @@
     renderGrid();
     if (settingsDialog.open) renderSettings();
     if (listDialog.open) renderListDialog();
+    if (newDialog.open) renderNewMenu();
     if (taskDialog.open && draft) renderTaskDialog();
   });
 
