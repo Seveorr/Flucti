@@ -2332,6 +2332,13 @@
         titleKey: "about.versions.v007.title",
         bodyKey: "about.versions.v007.body",
         openByDefault: false
+      },
+      {
+        versionKey: "about.versions.v008.label",
+        dateKey: "about.versions.v008.date",
+        titleKey: "about.versions.v008.title",
+        bodyKey: "about.versions.v008.body",
+        openByDefault: false
       }
     ];
 

@@ -661,24 +661,49 @@ const TRANSLATIONS = {
   },
 
   "about.versions.v007.label": {
+    es: "v.0.1.6-beta",
+    ca: "v.0.1.6-beta",
+    en: "v.0.1.6-beta",
+    de: "v.0.1.6-beta"
+  },
+  "about.versions.v007.date": {
+    es: "21/11/2026",
+    ca: "21/11/2026",
+    en: "21/11/2026",
+    de: "21/11/2026"
+  },
+  "about.versions.v007.title": {
+    es: "Movimiento de listas, resaltado de tareas y corrección de estilo y errores",
+    ca: "Moviment de llistes, ressaltat de tasques i correcció d'estil i errors",
+    en: "Moving lists, highlighting tasks, and style and error correction",
+    de: "Verschieben von Listen, Hervorheben von Aufgaben und Stil- und Fehlerkorrektur"
+  },
+  "about.versions.v007.body": {
+    es: "Ahora puedes mover libremente las listas por el menú principal y resaltar tareas en específico. También se han realizado mejoras en el estilo de la aplicación y se han corregido errores menores.",
+    ca: "Ara pots moure lliurement les llistes pel menú principal i ressaltar tasques en específic. També s'han realitzat millores en l'estil de l'aplicació i s'han corregit errors menors.",
+    en: "You can now move lists freely through the main menu and highlight specific tasks. Additionally, improvements have been made to the application's style and minor errors have been corrected.",
+    de: "Jetzt kannst du Listen frei durch das Hauptmenü verschieben und bestimmte Aufgaben hervorheben. Außerdem wurden Verbesserungen am Stil der Anwendung vorgenommen und kleinere Fehler behoben."
+  },
+
+  "about.versions.v008.label": {
     es: "v.0.2.0-beta",
     ca: "v.0.2.0-beta",
     en: "v.0.2.0-beta",
     de: "v.0.2.0-beta"
   },
-  "about.versions.v007.date": {
+  "about.versions.v008.date": {
     es: "24/11/2026",
     ca: "24/11/2026",
     en: "24/11/2026",
     de: "24/11/2026"
   },
-  "about.versions.v007.title": {
+  "about.versions.v008.title": {
     es: "Listas dependientes, más parámetros, y mejora visual general",
     ca: "Llistes dependents, més paràmetres, i millora visual general",
     en: "Dependent lists, more parameters, and general visual improvement",
     de: "Abhängige Listen, mehr Parameter und allgemeine visuelle Verbesserung"
   },
-  "about.versions.v007.body": {
+  "about.versions.v008.body": {
     es: "Esta es una actualización que trae cambios importantes. Introduce el concepto de listas dependientes y permite más parámetros personalizados, como lista de procedencia, requisitos en grupos así cómo la agrupación de los parámetros en grupos paramétricos y parámetro referente. Además, se ha mejorado la visualización de la aplicación en general, y se han solucionado inumerables errores menores.",
     ca: "Aquesta és una actualització que porta canvis importants. Introduïx el concepte de llistes dependents i permet més paràmetres personalitzats, com llista de procedència, requisits en grups així com l'agrupació dels paràmetres en grups paramètrics i paràmetre referent. A més, s'ha millorat la visualització de l'aplicació en general, i s'han solucionat innombrables errors menors.",
     en: "This is an update that brings important changes. It introduces the concept of dependent lists and allows for more customized parameters, such as source lists, requirements in groups, as well as the grouping of parameters into parametric groups and reference parameters. Additionally, the visualization of the application has been improved in general, and numerous minor errors have been fixed.",
