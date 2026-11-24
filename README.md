@@ -2,6 +2,8 @@
 
 Gestor de tareas minimalista, limpio y ordenado. La pantalla de inicio muestra la hora con segundos, un saludo y la fecha, y el fondo cambia con el cielo real del lugar donde estás: la hora, la época del año y el tiempo atmosférico. Al deslizar hacia abajo aparecen tus listas de tareas.
 
+Hay solo **dos posiciones**: la hora (quieta, sin desplazamiento) y las tareas (una hoja con su propio desplazamiento, sin rebotes). Para volver a la hora hay que estar arriba del todo, quieto, y deslizar hacia arriba con un gesto nuevo.
+
 Funciona **solo en tu navegador**: no hay servidor ni cuentas, y las tareas se guardan en este dispositivo.
 
 ## Qué hace
@@ -16,6 +18,10 @@ Funciona **solo en tu navegador**: no hay servidor ni cuentas, y las tareas se g
   - En la ventana de una tarea hay un botón para **eliminarla** (pide confirmación con una segunda pulsación).
   - El **resaltado** lo decide cada lista (apartado *Resaltado*): condiciones sobre sus parámetros (vence hoy o mañana, está vencida, la energía es alta, contiene un texto…), que se cumplan todas o alguna, con el color que elijas y, si quieres, parpadeo. Por defecto se resaltan las que vencen mañana.
   - Al completar una tarea se **marca, no se borra**: se puede mostrar u ocultar desde las opciones de la lista y recuperar desmarcándola.
+- **Deshacer y rehacer.** `Ctrl+Z` deshace el último cambio (tareas, listas, parámetros, ajustes…) y `Ctrl+Mayús+Z` (o `Ctrl+Y`) lo rehace. En un campo de texto, `Ctrl+Z` deshace lo escrito.
+- **Parámetro referente.** Cada lista elige cuál de sus parámetros de texto es el referente: el que se escribe en su recuadro y da nombre a las tareas. Por defecto es el título, que ya se puede quitar si el referente es otro. Se elige en *Parámetros* (en Ajustes, para las listas nuevas).
+- **Requisitos en grupos.** Los requisitos de las dependientes y el resaltado se organizan en grupos: dentro de cada grupo se cumplen todas las condiciones (Y) o alguna (O), y entre grupos también (Y/O).
+- **Orden por lista de origen.** En las dependientes se puede ordenar por *Lista de origen (orden de las listas)*, que agrupa las tareas según el orden de las listas en el menú, o por nombre.
 - **Orden por lista.** Por defecto: primero las que vencen antes y, a igual fecha, las que más energía suponen. Se puede cambiar en las opciones de cada lista.
 - **Parámetros por lista.** Cada lista tiene los suyos y cambiarlos no afecta a las demás. En *Ajustes → Parámetros por defecto* se eligen los que reciben las listas **nuevas** (al principio, los de siempre). En los parámetros se elige en qué tipos de tarea aparece cada uno y si es obligatorio, se pueden añadir los propios (texto, texto largo, número, fecha, lista desplegable o sí/no; los de otras listas se ofrecen abajo con un **+**), editar el nombre y las opciones de los propios y quitar cualquiera excepto el título. **Todas las listas desplegables, también la energía, se editan con un editor de opciones**: una fila por opción con su color, su nombre y botones para subirla o quitarla (Enter en un nombre abre otra opción debajo). El color de cada opción se ve como un punto junto al texto, en el contorno de la etiqueta, en el relleno de la etiqueta de color y en las barras de la energía; la primera opción es la "mayor" al ordenar. Los datos que ya tenían las tareas no se pierden al quitar un parámetro: se pueden restaurar.
 - **Aspecto de los parámetros.** En el apartado *Aspecto* de cada lista se elige cómo se ve cada parámetro: **título**, **descripción**, **dato** (texto pequeño, como ahora), **etiqueta** (palabra con contorno), **etiqueta de color** (rellena del color que elijas) u **oculto**, y se cambia el orden en que aparecen. Los datos y etiquetas seguidos se juntan en una misma fila.
@@ -44,7 +50,7 @@ Si abres `index.html` directamente como archivo, el navegador puede bloquear la 
 
 Todo se guarda en `localStorage`, en este navegador y dispositivo. Si borras los datos del sitio, se pierden las tareas, y no se sincronizan entre dispositivos.
 
-**Las actualizaciones no borran tareas.** Cuando cambia el formato de los datos, la app guarda antes una copia exacta de lo que había (`flucti:data:v1:backup-v2`, `…:corrupt` si los datos no se podían leer) y migra sin descartar ninguna tarea. Al pasar a parámetros por lista, cada lista existente conserva los parámetros que tenía y se ve igual que antes.
+**Las actualizaciones no borran tareas.** Cuando cambia el formato de los datos, la app guarda antes una copia exacta de lo que había (`flucti:data:v1:backup-v3`, `…:corrupt` si los datos no se podían leer) y migra sin descartar ninguna tarea. Al pasar a parámetros por lista, cada lista existente conserva los parámetros que tenía y se ve igual que antes.
 
 ## Probar el cielo desde la consola
 

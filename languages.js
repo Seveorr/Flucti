@@ -337,6 +337,25 @@ const TRANSLATIONS = {
   "option.up": { es: "Subir opción", ca: "Puja l'opció", en: "Move option up", de: "Option nach oben" },
   "option.remove": { es: "Quitar opción", ca: "Treu l'opció", en: "Remove option", de: "Option entfernen" },
 
+  /* Orden por lista de procedencia, requisitos en grupos y parámetro referente */
+  "sort.source.order": { es: "Lista de origen (orden de las listas)", ca: "Llista d'origen (ordre de les llistes)", en: "Source list (order of the lists)", de: "Quellliste (Reihenfolge der Listen)" },
+  "sort.source.name": { es: "Lista de origen (por nombre)", ca: "Llista d'origen (per nom)", en: "Source list (by name)", de: "Quellliste (nach Name)" },
+  "dir.order.asc": { es: "Como en el menú", ca: "Com al menú", en: "As in the menu", de: "Wie im Menü" },
+  "dir.order.desc": { es: "Al revés", ca: "Al revés", en: "Reversed", de: "Umgekehrt" },
+  "req.all": { es: "Todas las condiciones (Y)", ca: "Totes les condicions (I)", en: "All conditions (AND)", de: "Alle Bedingungen (UND)" },
+  "req.any": { es: "Alguna condición (O)", ca: "Alguna condició (O)", en: "Any condition (OR)", de: "Eine der Bedingungen (ODER)" },
+  "req.within.label": { es: "En este grupo se cumplen", ca: "En aquest grup es compleixen", en: "In this group, meet", de: "In dieser Gruppe erfüllt" },
+  "req.between.label": { es: "Entre grupos se cumplen", ca: "Entre grups es compleixen", en: "Between groups, meet", de: "Zwischen Gruppen erfüllt" },
+  "req.between.all": { es: "Todos los grupos (Y)", ca: "Tots els grups (I)", en: "All groups (AND)", de: "Alle Gruppen (UND)" },
+  "req.between.any": { es: "Algún grupo (O)", ca: "Algun grup (O)", en: "Any group (OR)", de: "Eine der Gruppen (ODER)" },
+  "req.addGroup": { es: "Añadir grupo", ca: "Afegeix un grup", en: "Add group", de: "Gruppe hinzufügen" },
+  "req.group": { es: "Grupo {n}", ca: "Grup {n}", en: "Group {n}", de: "Gruppe {n}" },
+  "req.group.remove": { es: "Quitar grupo", ca: "Treu el grup", en: "Remove group", de: "Gruppe entfernen" },
+  "link.match.label": { es: "Salen las tareas que cumplan", ca: "Surten les tasques que compleixin", en: "Show tasks that meet", de: "Aufgaben anzeigen, die erfüllen" },
+  "ref.label": { es: "Parámetro referente", ca: "Paràmetre referent", en: "Reference parameter", de: "Referenzparameter" },
+  "ref.hint": { es: "Es el que escribes en el recuadro de la lista y el que da nombre a cada tarea. Puede ser cualquier parámetro de texto.", ca: "És el que escrius al requadre de la llista i el que dona nom a cada tasca. Pot ser qualsevol paràmetre de text.", en: "It is what you type in the list box and what names each task. It can be any text parameter.", de: "Das ist, was du in das Feld der Liste schreibst und was jede Aufgabe benennt. Es kann jeder Textparameter sein." },
+  "param.refBadge": { es: "referente", ca: "referent", en: "reference", de: "Referenz" },
+
   // --- Existentes ---
   "settings.about": {
     es: "Acerca de",
@@ -639,6 +658,31 @@ const TRANSLATIONS = {
     ca: "Ara, cada llista pot tenir els seus propis paràmetres personalitzats i s'ha millorat la visualització dels mateixos a la interfície d'usuari.",
     en: "Now, each list can have its own custom parameters and the visualization of these has been improved in the user interface.",
     de: "Jetzt kann jede Liste ihre eigenen benutzerdefinierten Parameter haben und die Darstellung dieser wurde in der Benutzeroberfläche verbessert."
+  },
+
+  "about.versions.v007.label": {
+    es: "v.0.2.0-beta",
+    ca: "v.0.2.0-beta",
+    en: "v.0.2.0-beta",
+    de: "v.0.2.0-beta"
+  },
+  "about.versions.v007.date": {
+    es: "24/11/2026",
+    ca: "24/11/2026",
+    en: "24/11/2026",
+    de: "24/11/2026"
+  },
+  "about.versions.v007.title": {
+    es: "Listas dependientes, más parámetros, y mejora visual general",
+    ca: "Llistes dependents, més paràmetres, i millora visual general",
+    en: "Dependent lists, more parameters, and general visual improvement",
+    de: "Abhängige Listen, mehr Parameter und allgemeine visuelle Verbesserung"
+  },
+  "about.versions.v007.body": {
+    es: "Esta es una actualización que trae cambios importantes. Introduce el concepto de listas dependientes y permite más parámetros personalizados, como lista de procedencia, requisitos en grupos así cómo la agrupación de los parámetros en grupos paramétricos y parámetro referente. Además, se ha mejorado la visualización de la aplicación en general, y se han solucionado inumerables errores menores.",
+    ca: "Aquesta és una actualització que porta canvis importants. Introduïx el concepte de llistes dependents i permet més paràmetres personalitzats, com llista de procedència, requisits en grups així com l'agrupació dels paràmetres en grups paramètrics i paràmetre referent. A més, s'ha millorat la visualització de l'aplicació en general, i s'han solucionat innombrables errors menors.",
+    en: "This is an update that brings important changes. It introduces the concept of dependent lists and allows for more customized parameters, such as source lists, requirements in groups, as well as the grouping of parameters into parametric groups and reference parameters. Additionally, the visualization of the application has been improved in general, and numerous minor errors have been fixed.",
+    de: "Dies ist ein Update, das wichtige Änderungen mit sich bringt. Es führt das Konzept abhängiger Listen ein und ermöglicht mehr benutzerdefinierte Parameter, wie z.B. Quelllisten, Anforderungen in Gruppen sowie die Gruppierung der Parameter in parametrischen Gruppen und Bezugspunkte. Darüber hinaus wurde die Darstellung der Anwendung im Allgemeinen verbessert, und zahlreiche kleinere Fehler wurden behoben."
   },
 
 "about.me.title": {

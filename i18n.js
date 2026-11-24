@@ -8,7 +8,7 @@
    ========================================================================== */
 
 const Flucti = {
-  version: "v.0.1.6-beta", // versión actual: se muestra en pequeño al final de la pantalla de tareas
+  version: "v.0.2.0-beta", // versión actual: se muestra en pequeño al final de la pantalla de tareas
   now: () => new Date(), // "ahora": script.js lo sustituye para poder probar horas con testSky
   goToTasks: () => {}, // script.js lo conecta con el desplazamiento a la pantalla de tareas
   openDialogs: new Set(),

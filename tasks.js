@@ -9,10 +9,12 @@
              kind: "own" (independiente: tiene sus propias tareas) o "linked" (dependiente: no guarda tareas, muestra
              las de otras listas independientes)
              links: (dependientes) [{ listId }]; sus parámetros no se crean: son todos los distintos de las listas de origen
-             filter: (dependientes) { match, conditions } sobre los parámetros de esta lista
-             params: los parámetros de esa lista (cada una tiene los suyos)
+             filter: (dependientes) requisitos sobre los parámetros de esta lista: { match, groups: [{ match, conditions }] }
+             (cada grupo une sus condiciones con Y/"all" u O/"any"; "match" une los grupos entre sí)
+             params: los parámetros de esa lista (cada una tiene los suyos); el que lleva ref: true es el referente de la lista
+             (el que se escribe en el recuadro de la lista y da nombre a las tareas; por defecto, el título)
              layout: cómo se ve cada parámetro en la lista y en qué orden { id, style, color }
-             highlight: qué tareas se resaltan { match, color, blink, conditions: [{ param, op, value }] }
+             highlight: qué tareas se resaltan { match, groups: [{ match, conditions: [{ param, op, value }] }], color, blink }
              (el orden del array es el orden en que se ven las listas)
      tasks:  tareas { id, listId, kind, title, values, recurrence, done, completedAt, createdAt }
 
@@ -26,7 +28,7 @@
   const $ = (id) => document.getElementById(id);
 
   const STORAGE_KEY = "flucti:data:v1";
-  const STATE_VERSION = 3;
+  const STATE_VERSION = 4;
   const STRIKE_DELAY = 380; // tiempo que se ve la tarea tachada
   const LEAVE_DURATION = 320; // duración de la animación de salida
 
@@ -60,7 +62,7 @@
   const TYPES = ["text", "textarea", "number", "date", "select", "checkbox"];
 
   const BUILTIN = {
-    title: { type: "text", kinds: ["once", "recurring"], locked: true }, // no se puede quitar ni hacer opcional
+    title: { type: "text", kinds: ["once", "recurring"] }, // por defecto es el referente de la lista: mientras lo sea no se puede quitar ni hacer opcional
     description: { type: "textarea", kinds: ["once", "recurring"] },
     due: { type: "date", kinds: ["once"] },
     date: { type: "date", kinds: ["recurring"] },
@@ -72,7 +74,7 @@
 
   // Por defecto: descripción, vencimiento (hora opcional), planificación (opcional) y energía.
   const DEFAULT_PARAMS = [
-    { id: "title", once: true, recurring: true, required: true },
+    { id: "title", once: true, recurring: true, required: true, ref: true },
     { id: "description", once: true, recurring: true, required: false },
     { id: "due", once: true, recurring: false, required: false },
     { id: "date", once: false, recurring: true, required: true },
@@ -93,8 +95,9 @@
   ];
 
   // Resaltado: las tareas que cumplen las condiciones se pintan de un color (o parpadean). Por defecto, las que vencen mañana.
-  // color: "auto" (el del tema) o un color #rrggbb. match: "all" (todas las condiciones) o "any" (alguna).
-  const DEFAULT_HIGHLIGHT = { match: "all", color: "auto", blink: false, conditions: [{ param: "due", op: "inDays", value: 1 }] };
+  // color: "auto" (el del tema) o un color #rrggbb. Las condiciones van en grupos: dentro de cada grupo se cumplen todas
+  // ("all", Y) o alguna ("any", O) y, entre grupos, también ("match" de la raíz).
+  const DEFAULT_HIGHLIGHT = { match: "all", color: "auto", blink: false, groups: [{ match: "all", conditions: [{ param: "due", op: "inDays", value: 1 }] }] };
   const HL_OPS = {
     date: ["overdue", "today", "inDays", "withinDays", "empty", "notEmpty"],
     select: ["is", "isNot", "empty", "notEmpty"],
@@ -111,7 +114,7 @@
   const PALETTE = ["#2563eb", "#0d9488", "#16a34a", "#ca8a04", "#ea580c", "#dc2626", "#c026d3", "#64748b"];
   const DEFAULT_COLOR = PALETTE[0];
   const isColor = (v) => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v);
-  const defaultStyle = (id) => (id === "title" ? "title" : id === "description" ? "description" : id === "source" ? "tag" : "meta");
+  const defaultStyle = (id, ref = false) => (ref || id === "title" ? "title" : id === "description" ? "description" : id === "source" ? "tag" : "meta");
 
   // Color del texto que se lee bien sobre un fondo (blanco u oscuro según lo claro que sea).
   function inkFor(color) {
@@ -129,12 +132,12 @@
       kind,
       name,
       links: [],
-      filter: { match: "all", conditions: [] },
+      filter: { match: "all", groups: [] },
       hidden: false,
       showCompleted: false,
       sort: clone(DEFAULT_SORT),
       params: clone(params),
-      layout: params.map((p) => ({ id: p.id, style: defaultStyle(p.id), color: DEFAULT_COLOR })),
+      layout: params.map((p) => ({ id: p.id, style: defaultStyle(p.id, p.ref === true), color: DEFAULT_COLOR })),
       highlight: clone(DEFAULT_HIGHLIGHT),
     };
   }
@@ -167,7 +170,8 @@
     return options.length || !fallback ? options : clone(fallback);
   }
 
-  // Parámetros válidos de una lista o de los de por defecto (siempre con título).
+  // Parámetros válidos de una lista o de los de por defecto. Siempre hay uno (y solo uno) que es el referente:
+  // un parámetro de texto o de texto largo (por defecto, el título).
   function normalizeParams(raw) {
     const params = [];
     const seen = new Set();
@@ -178,15 +182,16 @@
         seen.add(p.id);
         const entry = {
           id: p.id,
-          once: def.kinds.includes("once") && (def.locked === true || p.once === true),
-          recurring: def.kinds.includes("recurring") && (def.locked === true || p.recurring === true),
-          required: def.locked === true || def.alwaysRequired === true || p.required === true,
+          once: def.kinds.includes("once") && p.once === true,
+          recurring: def.kinds.includes("recurring") && p.recurring === true,
+          required: def.alwaysRequired === true || p.required === true,
         };
+        if (p.ref === true) entry.ref = true;
         if (def.type === "select") entry.options = normalizeOptions(p.options, DEFAULT_ENERGY);
         params.push(entry);
       } else if (TYPES.includes(p.type) && typeof p.name === "string" && p.name) {
         seen.add(p.id);
-        params.push({
+        const entry = {
           id: p.id,
           type: p.type,
           name: p.name,
@@ -194,10 +199,21 @@
           once: p.once === true,
           recurring: p.recurring === true,
           required: p.required === true,
-        });
+        };
+        if (p.ref === true) entry.ref = true;
+        params.push(entry);
       }
     }
-    if (!seen.has("title")) params.unshift({ ...DEFAULT_PARAMS[0] });
+
+    // Referente: el marcado (si sigue siendo de texto), si no el título y, si no, el primer parámetro de texto.
+    const textual = (p) => p.id !== "source" && ["text", "textarea"].includes(BUILTIN[p.id] ? BUILTIN[p.id].type : p.type);
+    let ref = params.find((p) => p.ref && textual(p)) || params.find((p) => p.id === "title") || params.find(textual);
+    if (!ref) {
+      ref = { ...DEFAULT_PARAMS[0] };
+      params.unshift(ref);
+    }
+    for (const p of params) delete p.ref;
+    Object.assign(ref, { ref: true, once: true, recurring: true, required: true });
     return params;
   }
 
@@ -208,12 +224,12 @@
     for (const e of Array.isArray(raw) ? raw : []) {
       if (!e || typeof e.id !== "string" || seen.has(e.id) || !STYLES.includes(e.style)) continue;
       seen.add(e.id);
-      layout.push({ id: e.id, style: e.id === "title" && e.style === "hidden" ? "title" : e.style, color: isColor(e.color) ? e.color : DEFAULT_COLOR });
+      layout.push({ id: e.id, style: e.style, color: isColor(e.color) ? e.color : DEFAULT_COLOR });
     }
     return layout;
   }
 
-  // Resaltado guardado de una lista; las listas anteriores a esta función empiezan con el resaltado por defecto.
+  // Condiciones válidas (sin las de operaciones desconocidas).
   function normalizeConditions(raw) {
     const ops = new Set(Object.values(HL_OPS).flat());
     return (Array.isArray(raw) ? raw : [])
@@ -221,15 +237,23 @@
       .map((c) => ({ param: c.param, op: c.op, value: c.value === undefined || c.value === null ? "" : c.value }));
   }
 
-  function normalizeHighlight(raw) {
-    if (!raw || typeof raw !== "object") return clone(DEFAULT_HIGHLIGHT);
-    return { match: raw.match === "any" ? "any" : "all", color: isColor(raw.color) ? raw.color : "auto", blink: raw.blink === true, conditions: normalizeConditions(raw.conditions) };
+  // Requisitos { match, groups }. El formato anterior ({ match, conditions }) pasa a un único grupo.
+  function normalizeRequirements(raw) {
+    const r = raw && typeof raw === "object" ? raw : {};
+    if (Array.isArray(r.groups)) {
+      const groups = r.groups
+        .filter((g) => g && typeof g === "object")
+        .map((g) => ({ match: g.match === "any" ? "any" : "all", conditions: normalizeConditions(g.conditions) }));
+      return { match: r.match === "any" ? "any" : "all", groups };
+    }
+    const conditions = normalizeConditions(r.conditions);
+    return { match: "all", groups: conditions.length ? [{ match: r.match === "any" ? "any" : "all", conditions }] : [] };
   }
 
-  // Requisitos de una lista dependiente: sin condiciones salen todas las tareas de las listas de origen.
-  function normalizeFilter(raw) {
-    const r = raw && typeof raw === "object" ? raw : {};
-    return { match: r.match === "any" ? "any" : "all", conditions: normalizeConditions(r.conditions) };
+  // Resaltado guardado de una lista; las listas anteriores a esta función empiezan con el resaltado por defecto.
+  function normalizeHighlight(raw) {
+    if (!raw || typeof raw !== "object") return clone(DEFAULT_HIGHLIGHT);
+    return { ...normalizeRequirements(raw), color: isColor(raw.color) ? raw.color : "auto", blink: raw.blink === true };
   }
 
   // Listas de origen de una dependiente.
@@ -248,7 +272,7 @@
   // aspecto se añaden al final; los de parámetros quitados se conservan (por si el parámetro vuelve) pero no salen.
   function layoutOf(list) {
     for (const p of list.params) {
-      if (!list.layout.some((e) => e.id === p.id)) list.layout.push({ id: p.id, style: defaultStyle(p.id), color: DEFAULT_COLOR });
+      if (!list.layout.some((e) => e.id === p.id)) list.layout.push({ id: p.id, style: defaultStyle(p.id, p.ref === true), color: DEFAULT_COLOR });
     }
     return list.layout.filter((e) => list.params.some((p) => p.id === e.id));
   }
@@ -266,7 +290,7 @@
         id: l.id,
         kind: l.kind === "linked" ? "linked" : "own",
         links: l.kind === "linked" ? normalizeLinks(l.links) : [],
-        filter: normalizeFilter(l.filter),
+        filter: normalizeRequirements(l.filter),
         name: typeof l.name === "string" && l.name.trim() ? l.name : null,
         hidden: l.hidden === true,
         showCompleted: l.showCompleted === true,
@@ -281,7 +305,10 @@
     if (!lists.length) lists.push(base.lists[0]);
     if (!lists.some((l) => l.kind === "own")) lists.unshift(base.lists[0]); // siempre hay una lista independiente
     if (lists.every((l) => l.hidden)) lists[0].hidden = false;
-    lists.forEach((list) => layoutOf(list));
+    lists.forEach((list) => {
+      const ref = refOf(list.params);
+      for (const e of layoutOf(list)) if (e.id === ref && e.style === "hidden") e.style = "title"; // el referente no se puede ocultar
+    });
     const own = lists.filter((l) => l.kind === "own"); // solo estas guardan tareas
     lists.forEach((list) => (list.links = list.links.filter((k) => own.some((o) => o.id === k.listId))));
     lists.filter((l) => l.kind === "linked").forEach((list) => syncLinkedParams(list, lists));
@@ -295,7 +322,7 @@
         id: x.id,
         listId: own.some((l) => l.id === x.listId) ? x.listId : own[0].id,
         kind: recurring ? "recurring" : "once",
-        title: typeof x.title === "string" && x.title.trim() ? x.title : "—",
+        title: typeof x.title === "string" ? x.title : "—", // puede estar vacío si el referente de su lista es otro parámetro
         values: x.values && typeof x.values === "object" ? x.values : {},
         createdAt: Number.isFinite(x.createdAt) ? x.createdAt : Date.now(),
       };
@@ -381,12 +408,51 @@
 
   let state = loadState();
 
-  function saveState() {
+  // Historial para deshacer (Ctrl+Z) y rehacer (Ctrl+Mayús+Z): una copia de los datos tras cada cambio.
+  const HISTORY_LIMIT = 100;
+  const history = { past: [], future: [], current: JSON.stringify(state) };
+
+  function persist(json) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      localStorage.setItem(STORAGE_KEY, json);
     } catch {
       /* Sin almacenamiento disponible */
     }
+  }
+
+  function saveState() {
+    const json = JSON.stringify(state);
+    persist(json);
+    if (json === history.current) return;
+    history.past.push(history.current);
+    if (history.past.length > HISTORY_LIMIT) history.past.shift();
+    history.current = json;
+    history.future = [];
+  }
+
+  // Vuelve a una copia del historial y redibuja todo lo que esté a la vista.
+  function restoreSnapshot(json) {
+    state = normalizeState(JSON.parse(json));
+    history.current = JSON.stringify(state);
+    persist(history.current);
+    renderGrid();
+    if ($("settings-dialog").open) renderSettings();
+    if ($("list-dialog").open) {
+      if (state.lists.some((l) => l.id === editingListId)) renderListDialog();
+      else $("list-dialog").close();
+    }
+  }
+
+  function undo() {
+    if (!history.past.length) return;
+    history.future.push(history.current);
+    restoreSnapshot(history.past.pop());
+  }
+
+  function redo() {
+    if (!history.future.length) return;
+    history.past.push(history.current);
+    restoreSnapshot(history.future.pop());
   }
 
   /* ------------------------------------------------------------------------
@@ -407,8 +473,9 @@
       builtin: Boolean(def),
       type: def ? def.type : p.type,
       kinds: def ? def.kinds : ["once", "recurring"],
-      locked: Boolean(def && def.locked),
-      fixedRequired: Boolean(def && (def.locked || def.alwaysRequired)),
+      ref: p.ref === true, // referente de la lista: se escribe en su recuadro y da nombre a las tareas
+      locked: p.ref === true, // el referente no se quita, no se oculta ni se hace opcional
+      fixedRequired: p.ref === true || Boolean(def && def.alwaysRequired),
       options: (def ? def.type : p.type) === "select" ? resolveOptions(p) : null,
       name: def ? t(`param.${p.id}`) : p.name,
       once: p.once,
@@ -420,6 +487,22 @@
   const allParams = (params) => params.map(paramInfo);
   const paramsFor = (params, kind) => allParams(params).filter((p) => p[kind]); // los que lleva ese tipo de tarea
   const paramById = (params, id) => allParams(params).find((p) => p.id === id);
+  // id del parámetro referente (función, no const: se usa al cargar los datos, antes de llegar a esta línea)
+  function refOf(params) {
+    return (params.find((p) => p.ref) || params[0]).id;
+  }
+
+  // Nombre de una tarea: lo que tiene en el parámetro referente de su lista (o, si falta, su título).
+  function nameOf(task, params) {
+    const ref = refOf(params);
+    if (ref !== "title") {
+      const info = paramInfo(params.find((p) => p.id === ref));
+      const raw = task.values[ref];
+      const text = raw === undefined || raw === null ? "" : info.type === "textarea" ? richPlain(raw) : String(raw).trim();
+      if (text) return text;
+    }
+    return task.title || "—";
+  }
   // Opciones de un parámetro de lista desplegable: { id, label, color }. En la energía, mientras no se
   // le cambie el nombre, se usa el texto traducido.
   function resolveOptions(p) {
@@ -449,13 +532,16 @@
     if (hasParam(params, "due") || hasParam(params, "date")) criteria.push({ id: "due", label: t("param.due"), kind: "date" });
     if (hasParam(params, "planned")) criteria.push({ id: "planned", label: t("param.planned"), kind: "date" });
     if (hasParam(params, "energy")) criteria.push({ id: "energy", label: t("param.energy"), kind: "level" });
-    criteria.push({ id: "title", label: t("param.title"), kind: "text" }, { id: "created", label: t("sort.created"), kind: "created" });
-    if (hasParam(params, "source")) criteria.push({ id: "source", label: t("param.source"), kind: "text" });
-    for (const p of allParams(params)) if (!p.builtin) criteria.push({ id: p.id, label: p.name, kind: kindOfType(p.type) });
+    const ref = allParams(params).find((p) => p.ref); // "title" es el nombre de la tarea, es decir, su referente
+    criteria.push({ id: "title", label: ref ? ref.name : t("param.title"), kind: "text" }, { id: "created", label: t("sort.created"), kind: "created" });
+    if (hasParam(params, "source")) {
+      criteria.push({ id: "sourceOrder", label: t("sort.source.order"), kind: "order" }, { id: "source", label: t("sort.source.name"), kind: "text" });
+    }
+    for (const p of allParams(params)) if (!p.builtin && !p.ref) criteria.push({ id: p.id, label: p.name, kind: kindOfType(p.type) });
     return criteria;
   }
 
-  function sortValue(task, by, params) {
+  function sortValue(task, by, params, nameFn) {
     switch (by) {
       case "due":
         return dateKey(dueOf(task));
@@ -464,9 +550,14 @@
       case "energy":
         return selectRank(params.get("energy"), task.values.energy);
       case "title":
-        return task.title;
+        return nameFn(task);
       case "source":
         return task.values.source;
+      case "sourceOrder": {
+        // la lista de procedencia, según su posición entre las listas (la que se cambia arrastrándolas)
+        const i = state.lists.findIndex((l) => l.id === task.sourceId);
+        return i === -1 ? null : i;
+      }
       case "created":
         return task.createdAt;
       default: {
@@ -489,11 +580,12 @@
     const params = new Map(allParams(source).map((p) => [p.id, p]));
     const rules = sort.filter((r) => kinds.has(r.by));
     const locale = I18n.current().locale;
+    const nameFn = (task) => nameOf(task, source);
 
     return [...tasks].sort((a, b) => {
       for (const { by, dir } of rules) {
-        const va = sortValue(a, by, params);
-        const vb = sortValue(b, by, params);
+        const va = sortValue(a, by, params, nameFn);
+        const vb = sortValue(b, by, params, nameFn);
         const missingA = va === null || va === undefined;
         const missingB = vb === null || vb === undefined;
         if (missingA && missingB) continue;
@@ -573,6 +665,12 @@
         if (!hasParam(params, "due")) out.push({ ...p, id: "due", name: t("param.due") });
         continue;
       }
+      // La lista de origen se elige entre las listas (no se escribe): se guarda su id, para que cambiarle el nombre no rompa nada.
+      if (p.id === "source") {
+        const options = state.lists.filter((l) => l.kind !== "linked").map((l) => ({ id: l.id, label: listName(l) }));
+        out.push({ ...p, type: "select", options });
+        continue;
+      }
       out.push(p);
     }
     return out;
@@ -588,7 +686,7 @@
   }
 
   function conditionMet(task, cond, info) {
-    const raw = rawValue(task, cond.param);
+    const raw = cond.param === "source" ? task.sourceId : rawValue(task, cond.param); // el origen se compara por id de lista
     const type = info.type;
     const empty =
       type === "date" ? !(raw && raw.date)
@@ -628,15 +726,27 @@
     return false;
   }
 
-  // El resaltado de la lista si la tarea cumple sus condiciones (las de parámetros quitados no cuentan), o null.
+  // ¿Cumple la tarea unos requisitos { match, groups }? Cada grupo une sus condiciones con Y (todas) u O (alguna) y los
+  // grupos, entre sí, también. Las condiciones de parámetros quitados y los grupos vacíos no cuentan.
+  // Devuelve null si no hay nada que comprobar (sin requisitos).
+  function requirementsMet(task, req, infos) {
+    const results = [];
+    for (const group of req.groups) {
+      const active = group.conditions.filter((c) => infos.has(c.param));
+      if (!active.length) continue;
+      const test = (c) => conditionMet(task, c, infos.get(c.param));
+      results.push(group.match === "any" ? active.some(test) : active.every(test));
+    }
+    if (!results.length) return null;
+    return req.match === "any" ? results.some(Boolean) : results.every(Boolean);
+  }
+
+  // El resaltado de la lista si la tarea cumple sus condiciones, o null.
   function highlightOf(task, list) {
     const hl = list.highlight;
     if (task.done || !hl) return null;
     const infos = new Map(highlightParams(list.params).map((p) => [p.id, p]));
-    const active = hl.conditions.filter((c) => infos.has(c.param));
-    if (!active.length) return null;
-    const test = (c) => conditionMet(task, c, infos.get(c.param));
-    return (hl.match === "any" ? active.some(test) : active.every(test)) ? hl : null;
+    return requirementsMet(task, hl, infos) ? hl : null;
   }
 
   /* ------------------------------------------------------------------------
@@ -694,7 +804,6 @@
   function tasksOfLinked(list) {
     const infos = allParams(list.params);
     const conditionInfos = new Map(highlightParams(list.params).map((p) => [p.id, p]));
-    const active = list.filter.conditions.filter((c) => conditionInfos.has(c.param));
     const out = [];
     for (const link of list.links) {
       const source = state.lists.find((l) => l.id === link.listId && l.kind === "own");
@@ -704,7 +813,7 @@
       for (const real of state.tasks) {
         if (real.listId !== source.id) continue;
         const values = { source: listName(source) }; // cada tarea lleva el nombre de la lista de la que viene
-        let title = real.title;
+        let title = nameOf(real, source.params);
         for (const [info, from] of maps) {
           if (!from) continue;
           const v = convertValue(rawValue(real, from.id), from, info);
@@ -714,9 +823,8 @@
             values[info.id] = v;
           }
         }
-        const virtual = { id: real.id, real, listId: list.id, kind: "once", title, values, createdAt: real.createdAt, done: real.done === true, completedAt: real.completedAt };
-        const test = (c) => conditionMet(virtual, c, conditionInfos.get(c.param));
-        if (!active.length || (list.filter.match === "any" ? active.some(test) : active.every(test))) out.push(virtual);
+        const virtual = { id: real.id, real, listId: list.id, sourceId: source.id, kind: "once", title, values, createdAt: real.createdAt, done: real.done === true, completedAt: real.completedAt };
+        if (requirementsMet(virtual, list.filter, conditionInfos) !== false) out.push(virtual);
       }
     }
     return out;
@@ -739,7 +847,7 @@
   // Lo que se enseña de un parámetro en una tarea, o null si no hay nada que enseñar:
   // { text, diff (días hasta la fecha), bars (nivel de energía), repeat }
   function shownValue(task, info, style) {
-    if (info.id === "title") return { text: task.title };
+    if (info.id === "title") return task.title ? { text: task.title } : info.ref ? { text: "—" } : null;
     if (!info[task.kind]) return null; // el parámetro no está activo para este tipo de tarea
     if (info.id === "repeat") {
       return task.kind === "recurring" && task.recurrence ? { text: repeatSummary(task.recurrence), repeat: true } : null;
@@ -815,7 +923,7 @@
       type: "checkbox",
       class: "check",
       checked: task.done === true,
-      "aria-label": t("task.complete", { name: task.title }),
+      "aria-label": t("task.complete", { name: nameOf(task, list.params) }),
       onchange: (event) => {
         const real = task.real || task; // en una lista dependiente, la tarea de verdad es la de su lista de origen
         if (task.done && !event.target.checked) restoreTask(real);
@@ -909,12 +1017,14 @@
       input.focus();
       return;
     }
-    const missing = paramsFor(list.params, "once").filter((p) => p.id !== "title" && p.required);
+    const missing = paramsFor(list.params, "once").filter((p) => !p.ref && p.required);
     if (missing.length) {
       openTaskDialog(list, true);
       return;
     }
-    const task = { id: uid(), listId: list.id, kind: "once", title, values: {}, createdAt: Date.now() };
+    // Lo escrito va al parámetro referente de la lista (por defecto, el título).
+    const ref = refOf(list.params);
+    const task = { id: uid(), listId: list.id, kind: "once", title: ref === "title" ? title : "", values: ref === "title" ? {} : { [ref]: title }, createdAt: Date.now() };
     state.tasks.push(task);
     saveState();
     titleDrafts.delete(list.id);
@@ -1080,9 +1190,9 @@
     };
 
     const tick = () => {
-      const min = Flucti.minScroll();
-      if (y < 90 && window.scrollY > min) window.scrollTo({ top: Math.max(min, window.scrollY - 14), behavior: "instant" });
-      else if (y > window.innerHeight - 90) window.scrollBy({ top: 14, behavior: "instant" });
+      const sheet = $("tasks"); // la hoja de tareas es la que se desplaza
+      if (y < 90 && sheet.scrollTop > 0) sheet.scrollTop -= 14;
+      else if (y > window.innerHeight - 90) sheet.scrollTop += 14;
       update();
       raf = requestAnimationFrame(tick);
     };
@@ -1314,11 +1424,18 @@
     return isEmptyValue(info, draft.values[info.id]);
   }
 
-  const missingParams = () => paramsFor(draftParams(), draft.kind).filter((p) => p.id !== "title" && isMissing(p));
-  const titleEmpty = () => !(draft.values.title || "").trim();
+  const missingParams = () => paramsFor(draftParams(), draft.kind).filter((p) => !p.ref && isMissing(p));
+  // El referente es el parámetro que da nombre a la tarea: siempre es obligatorio (si queda vacío, la tarea se descarta).
+  const draftRef = () => paramById(draftParams(), refOf(draftParams()));
+  const draftRefText = () => {
+    const info = draftRef();
+    const v = draft.values[info.id];
+    return cleanTitle(info.type === "textarea" ? richPlain(v || "") : String(v ?? ""));
+  };
+  const titleEmpty = () => !draftRefText();
 
   // Sin título la tarea se descarta: se avisa en rojo mientras esté vacío. Si faltan parámetros obligatorios, se dice cuáles.
-  const titleGroup = () => $("task-fields").querySelector('[data-param="title"]');
+  const titleGroup = () => $("task-fields").querySelector(`[data-param="${refOf(draftParams())}"]`);
 
   function refreshTaskError() {
     const group = titleGroup();
@@ -1434,7 +1551,7 @@
   }
 
   function buildField(info) {
-    const missing = draft.showErrors && info.id !== "title" && isMissing(info);
+    const missing = draft.showErrors && !info.ref && isMissing(info);
     const group = h("div", { class: `field-group${missing ? " invalid" : ""}`, dataset: { param: info.id } });
     const inputId = `task-field-${info.id}`;
     const label = (tag = "label") => h(tag, { class: "field-label", for: tag === "label" ? inputId : null, text: info.name });
@@ -1444,7 +1561,15 @@
     if (info.type === "textarea") {
       group.append(
         h("div", { class: "field-label", text: info.name }),
-        richEditor({ value: value || "", label: info.name, heightKey: info.id, onChange: store })
+        richEditor({
+          value: value || "",
+          label: info.name,
+          heightKey: info.id,
+          onChange: (v) => {
+            store(v);
+            if (info.ref) refreshTaskError();
+          },
+        })
       );
     } else if (info.type === "text" || info.type === "number") {
       const props = {
@@ -1454,12 +1579,12 @@
         value: value ?? "",
         oninput: (e) => {
           store(e.target.value);
-          if (info.id === "title") refreshTaskError();
+          if (info.ref) refreshTaskError();
         },
       };
       if (info.type === "number") Object.assign(props, { inputmode: "decimal", step: "any" });
-      else props.maxlength = info.id === "title" ? 120 : 200;
-      if (info.id === "title") {
+      else props.maxlength = info.ref ? 120 : 200;
+      if (info.ref) {
         props.onkeydown = (event) => {
           if (event.key === "Enter") {
             event.preventDefault();
@@ -1528,7 +1653,7 @@
     draft = {
       listId: list.id,
       kind: "once",
-      values: { title },
+      values: { [refOf(list.params)]: title },
       recurrence: { mode: "interval", every: 1, unit: "week", days: [] },
       showErrors, // true: se abre ya señalando los parámetros obligatorios que faltan
     };
@@ -1582,7 +1707,7 @@
       id: uid(),
       listId: draft.listId,
       kind,
-      title: cleanTitle(draft.values.title),
+      title: cleanTitle(draft.values.title || ""),
       values,
       createdAt: Date.now(),
     };
@@ -1719,7 +1844,7 @@
     return h(
       "div",
       { class: "param-row" },
-      h("div", { class: "param-name" }, name, h("small", { text: t(`type.${info.type}`) })),
+      h("div", { class: "param-name" }, name, h("small", { text: info.ref ? `${t(`type.${info.type}`)} · ${t("param.refBadge")}` : t(`type.${info.type}`) })),
       h("div", { class: "param-cell" }, paramCheck(scope, p, info, "once", t("kind.once"))),
       h("div", { class: "param-cell" }, paramCheck(scope, p, info, "recurring", t("kind.recurring"))),
       h("div", { class: "param-cell" }, paramCheck(scope, p, info, "required", t("param.required"))),
@@ -1750,8 +1875,10 @@
     const order = DEFAULT_PARAMS.map((p) => p.id);
     const later = order.slice(order.indexOf(id) + 1);
     const at = params.findIndex((p) => later.includes(p.id));
-    if (at === -1) params.push({ ...def });
-    else params.splice(at, 0, { ...def });
+    const copy = { ...def };
+    delete copy.ref; // el referente de la lista no cambia al restaurar un parámetro
+    if (at === -1) params.push(copy);
+    else params.splice(at, 0, copy);
     afterParamsChange(scope);
     scope.rerender();
   }
@@ -1951,9 +2078,33 @@
     );
   }
 
+  // Elige el parámetro referente (el que se escribe en el recuadro de la lista y da nombre a las tareas).
+  function setRef(scope, id) {
+    const params = scopeParams(scope);
+    const next = params.find((p) => p.id === id);
+    if (!next) return;
+    for (const p of params) delete p.ref;
+    Object.assign(next, { ref: true, once: true, recurring: true, required: true });
+    if (scope.list) {
+      // en la lista, el nuevo referente se ve como título (y no puede quedar oculto)
+      const entry = layoutOf(scope.list).find((e) => e.id === id);
+      if (entry && entry.style !== "description") entry.style = "title";
+    }
+    afterParamsChange(scope);
+    scope.rerender();
+  }
+
   // Tabla de parámetros: la de por defecto (Ajustes) o la de una lista (sus opciones).
   function paramsSection(scope) {
     const params = scopeParams(scope);
+    const candidates = allParams(params).filter((p) => p.id !== "source" && (p.type === "text" || p.type === "textarea"));
+    const refPicker = h(
+      "div",
+      { class: "field-group" },
+      h("span", { class: "field-label", text: t("ref.label") }),
+      dropdown({ value: refOf(params), label: t("ref.label"), options: candidates.map((p) => ({ value: p.id, label: p.name })), onChange: (id) => setRef(scope, id) }),
+      h("p", { class: "settings-hint", text: t("ref.hint") })
+    );
     const grid = h("div", { class: "param-grid", role: "group", "aria-label": t("settings.params") });
     grid.append(
       h("div", { class: "param-row param-header" }, h("span"), ...["col.once", "col.recurring", "col.required"].map((key) => h("span", { text: t(key) })), h("span"))
@@ -1976,6 +2127,7 @@
       "section",
       { class: "settings-section" },
       h("p", { class: "settings-hint", text: t(scope.list ? "list.params.hint" : "settings.params.hint") }),
+      refPicker,
       grid,
       removed.length
         ? h(
@@ -2002,7 +2154,9 @@
                 class: "chip",
                 type: "button",
                 onclick: () => {
-                  scopeParams(scope).push(clone(p));
+                  const copy = clone(p);
+                  delete copy.ref;
+                  scopeParams(scope).push(copy);
                   afterParamsChange(scope);
                   scope.rerender();
                 },
@@ -2170,6 +2324,13 @@
         dateKey: "about.versions.v006.date",
         titleKey: "about.versions.v006.title",
         bodyKey: "about.versions.v006.body",
+        openByDefault: false
+      },
+      {
+        versionKey: "about.versions.v007.label",
+        dateKey: "about.versions.v007.date",
+        titleKey: "about.versions.v007.title",
+        bodyKey: "about.versions.v007.body",
         openByDefault: false
       }
     ];
@@ -2500,20 +2661,28 @@
     );
   }
 
-  // Editor de condiciones sobre parámetros (resaltado y requisitos de las dependientes). "target" es
-  // { match, conditions }; devuelve las filas, el botón de añadir y, con varias, "todas o alguna".
-  function conditionsEditor(target, params, rebuild, apply) {
+  // Editor de requisitos sobre parámetros (resaltado y requisitos de las dependientes). "target" es { match, groups }:
+  // cada grupo tiene sus condiciones, que se cumplen todas (Y) o alguna (O), y los grupos se unen entre sí con Y u O.
+  // Devuelve los grupos con sus filas y los botones de añadir.
+  function requirementsEditor(target, params, rebuild, apply, labelKey = "hl.match.label") {
     const infos = new Map(params.map((p) => [p.id, p]));
     const opsFor = (info) => HL_OPS[hlGroup(info.type)] || [];
 
-    const conditionRow = (cond) => {
+    const newCondition = () => {
+      const first = params.find((p) => p.id === "due") || params[0];
+      const op = opsFor(first)[0];
+      return { param: first.id, op, value: defaultConditionValue(op, first) };
+    };
+
+    const conditionRow = (group, cond) => {
       const info = infos.get(cond.param);
       const remove = h("button", {
         class: "icon-btn small",
         type: "button",
         "aria-label": t("hl.remove"),
         onclick: () => {
-          target.conditions.splice(target.conditions.indexOf(cond), 1);
+          group.conditions.splice(group.conditions.indexOf(cond), 1);
+          if (!group.conditions.length) target.groups.splice(target.groups.indexOf(group), 1); // un grupo vacío desaparece
           rebuild();
         },
       }, icon("close", 16));
@@ -2583,36 +2752,96 @@
       return h("div", { class: "hl-row" }, h("div", { class: "hl-line" }, paramSelect, opSelect, remove), value ? h("div", { class: "hl-value" }, value) : null);
     };
 
-    return [
-      ...target.conditions.map(conditionRow),
+    // Y / O: "all" (todas) o "any" (alguna)
+    const matchPicker = (value, label, onChange) =>
+      dropdown({
+        value,
+        label,
+        options: [{ value: "all", label: t("req.all") }, { value: "any", label: t("req.any") }],
+        onChange,
+      });
+
+    const many = target.groups.length > 1;
+    const out = [];
+    target.groups.forEach((group, index) => {
+      if (index > 0) {
+        out.push(
+          h(
+            "div",
+            { class: "req-between" },
+            h("span", { class: "field-label", text: t("req.between.label") }),
+            dropdown({
+              value: target.match,
+              label: t("req.between.label"),
+              options: [{ value: "all", label: t("req.between.all") }, { value: "any", label: t("req.between.any") }],
+              onChange: (match) => {
+                target.match = match;
+                rebuild(); // el mismo ajuste se ve entre todos los grupos
+              },
+            })
+          )
+        );
+      }
+      const body = [
+        ...group.conditions.map((cond) => conditionRow(group, cond)),
+        h("button", {
+          class: "text-btn",
+          type: "button",
+          text: t("hl.add"),
+          onclick: () => {
+            group.conditions.push(newCondition());
+            rebuild();
+          },
+        }),
+        group.conditions.length > 1
+          ? h(
+            "div",
+            { class: "field-group" },
+            h("span", { class: "field-label", text: t(many ? "req.within.label" : labelKey) }),
+            matchPicker(group.match, t(many ? "req.within.label" : labelKey), (match) => {
+              group.match = match;
+              apply();
+            })
+          )
+          : null,
+      ];
+      out.push(
+        many
+          ? h(
+            "div",
+            { class: "req-group" },
+            h(
+              "div",
+              { class: "req-head" },
+              h("span", { class: "field-label", text: t("req.group", { n: index + 1 }) }),
+              h("button", {
+                class: "icon-btn small",
+                type: "button",
+                "aria-label": `${t("req.group.remove")}: ${index + 1}`,
+                onclick: () => {
+                  target.groups.splice(index, 1);
+                  rebuild();
+                },
+              }, icon("close", 16))
+            ),
+            ...body
+          )
+          : h("div", { class: "req-flat" }, ...body)
+      );
+    });
+
+    out.push(
       h("button", {
         class: "text-btn",
         type: "button",
-        text: t("hl.add"),
+        text: t(target.groups.length ? "req.addGroup" : "hl.add"),
         onclick: () => {
-          const first = params.find((p) => p.id === "due") || params[0];
-          const op = opsFor(first)[0];
-          target.conditions.push({ param: first.id, op, value: defaultConditionValue(op, first) });
+          target.groups.push({ match: "all", conditions: [newCondition()] });
           rebuild();
         },
-      }),
-      target.conditions.length > 1
-        ? h(
-          "div",
-          { class: "field-group" },
-          h("span", { class: "field-label", text: t("hl.match.label") }),
-          dropdown({
-            value: target.match,
-            label: t("hl.match.label"),
-            options: [{ value: "all", label: t("hl.match.all") }, { value: "any", label: t("hl.match.any") }],
-            onChange: (match) => {
-              target.match = match;
-              apply();
-            },
-          })
-        )
-        : null,
-    ];
+      })
+    );
+    return out;
   }
 
   // Resaltado: condiciones sobre los parámetros de la lista, color y parpadeo.
@@ -2631,7 +2860,7 @@
       "section",
       { class: "settings-section" },
       h("p", { class: "settings-hint", text: t("list.highlight.hint") }),
-      ...conditionsEditor(hl, highlightParams(list.params), rebuild, apply),
+      ...requirementsEditor(hl, highlightParams(list.params), rebuild, apply, "hl.match.label"),
       h(
         "div",
         { class: "field-group" },
@@ -2699,7 +2928,7 @@
         { class: "link-block" },
         h("p", { class: "field-label", text: t("link.filter") }),
         h("p", { class: "settings-hint", text: t("link.filter.hint") }),
-        ...conditionsEditor(list.filter, highlightParams(list.params), rebuild, apply)
+        ...requirementsEditor(list.filter, highlightParams(list.params), rebuild, apply, "link.match.label")
       )
     );
   }
@@ -2876,8 +3105,9 @@
   $("task-close").addEventListener("click", () => attemptCloseTask(false));
   $("task-save-btn").addEventListener("click", () => attemptCloseTask(true));
   taskDialog.addEventListener("close", () => {
-    if (draft && !draft.editingTaskId && (draft.values.title || "").trim()) {
-      titleDrafts.set(draft.listId, cleanTitle(draft.values.title));
+    const typed = draft && !draft.editingTaskId ? draftRefText() : "";
+    if (typed) {
+      titleDrafts.set(draft.listId, typed);
       draft = null;
       renderGrid();
     }
@@ -2919,6 +3149,23 @@
   wide.addEventListener("change", rebalance);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(rebalance);
 
+  // Ctrl+Z deshace el último cambio y Ctrl+Mayús+Z (o Ctrl+Y) lo rehace. En un campo de texto manda el propio campo
+  // (deshace lo que se escribe), salvo en el recuadro de añadir tareas cuando está vacío, que no tiene nada que deshacer.
+  document.addEventListener("keydown", (event) => {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+    const key = event.key.toLowerCase();
+    const wantsRedo = key === "y" || (key === "z" && event.shiftKey);
+    const wantsUndo = key === "z" && !event.shiftKey;
+    if (!wantsUndo && !wantsRedo) return;
+    const target = event.target;
+    const field = target.closest ? target.closest("input, textarea, select, [contenteditable='true']") : null;
+    if (field && !(field.classList.contains("add-input") && !field.value)) return;
+    if (taskDialog.open || Flucti.dragging) return;
+    event.preventDefault();
+    if (wantsRedo) redo();
+    else undo();
+  });
+
   saveState();
   renderGrid();
 
@@ -2934,5 +3181,7 @@
     renderGrid,
     layoutOf,
     makeList,
+    undo,
+    redo,
   };
 })();

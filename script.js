@@ -741,135 +741,120 @@
   }
 
   /* ------------------------------------------------------------------------
-     Navegación entre los dos estados: inicio (home) y tareas (tasks)
+     Navegación entre los dos estados: la hora (quieta, sin desplazamiento) y las tareas (una hoja con su
+     propio desplazamiento, como una web aparte). La página en sí no se desplaza nunca, así que arriba del todo
+     no hay nada que rebotar: la hoja se queda quieta y solo un gesto nuevo, empezado en el borde, lleva a la hora.
      ------------------------------------------------------------------------ */
+  const homeSection = document.getElementById("home");
   const tasksSection = document.getElementById("tasks");
   const scrollHint = document.querySelector(".scroll-hint");
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-  const MOVE_DURATION = 800;
+  const MOVE_DURATION = 800; // igual que --move en style.css
+  const VIEW_KEY = "view:v1";
 
   // Con una ventana abierta (ajustes, tarea, lista), una lista a pantalla completa o una lista arrastrándose,
-  // los gestos de desplazamiento de la página se ignoran.
+  // los gestos de la página se ignoran.
   const isLocked = () => Flucti.isDialogOpen() || Flucti.dragging === true;
 
-  let locked = false;
-  let lockTimer;
+  let view = "home"; // "home" o "tasks"
+  let moving = false;
+  let moveTimer = 0;
+  let openTimer = 0;
+  let lastMoveEnd = 0;
 
-  const tasksTop = () => tasksSection.offsetTop;
-  const inHome = () => window.scrollY < tasksTop() - 2;
-  const atTasksTop = () => Math.abs(window.scrollY - tasksTop()) <= 2;
-  Flucti.minScroll = tasksTop;
+  const atTop = () => tasksSection.scrollTop <= 0;
 
-  // El gesto actual empezó dentro de la hoja de tareas: puede subir hasta su franja superior, pero no pasar de ahí.
-  // Para ver la hora hay que hacer otro gesto desde esa franja.
-  let gestureFromTasks = false;
-  let touching = false;
-
-  const jump = (top) => window.scrollTo({ top, behavior: "instant" }); // sin animación
-
-  function goTo(top) {
-    if (locked) return;
-    locked = true;
-    gestureFromTasks = false;
-    window.scrollTo({ top, behavior: reduceMotion.matches ? "auto" : "smooth" });
-    clearTimeout(lockTimer);
-    lockTimer = setTimeout(() => {
-      locked = false;
-    }, reduceMotion.matches ? 50 : MOVE_DURATION);
+  function applyView(next, openDelay) {
+    view = next;
+    const inTasks = next === "tasks";
+    document.body.classList.toggle("view-tasks", inTasks);
+    homeSection.inert = inTasks;
+    clearTimeout(openTimer);
+    if (inTasks) openTimer = setTimeout(() => tasksSection.classList.add("open"), openDelay); // las listas aparecen al pasar de la mitad
+    else tasksSection.classList.remove("open");
+    try {
+      sessionStorage.setItem(VIEW_KEY, next);
+    } catch {
+      /* se ignora */
+    }
   }
 
-  const goDown = () => goTo(tasksTop());
-  Flucti.goToTasks = goDown; // tasks.js lo usa al elegir una lista
-  const goUp = () => goTo(0);
+  function goTo(next) {
+    if (moving || view === next) return;
+    const duration = reduceMotion.matches ? 50 : MOVE_DURATION;
+    moving = true;
+    applyView(next, duration * 0.35);
+    clearTimeout(moveTimer);
+    moveTimer = setTimeout(() => {
+      moving = false;
+      lastMoveEnd = performance.now();
+      const active = document.activeElement;
+      if (view === "tasks" && !Flucti.isDialogOpen() && (!active || active === document.body)) tasksSection.focus({ preventScroll: true });
+    }, duration);
+  }
 
+  const goDown = () => goTo("tasks");
+  const goUp = () => goTo("home");
+  Flucti.goToTasks = goDown; // tasks.js lo usa al elegir una lista
+
+  // Rueda y trackpad. Un gesto es una racha de eventos sin pausas de más de 200 ms (la inercia cuenta como parte del
+  // gesto). Para volver a la hora hay que empezar un gesto nuevo con la hoja ya arriba del todo: si se llega arriba
+  // con el impulso de otro gesto, la hoja se queda quieta.
   let lastWheelTime = 0;
-  let wheelStartedAtTop = false;
+  let gestureStart = 0;
+  let gestureAtTop = false;
 
   window.addEventListener(
     "wheel",
     (event) => {
       if (event.ctrlKey || isLocked()) return;
-
       const now = performance.now();
       if (now - lastWheelTime > 200) {
-        wheelStartedAtTop = atTasksTop();
-        gestureFromTasks = window.scrollY >= tasksTop() - 2;
+        gestureStart = now;
+        gestureAtTop = view === "tasks" && atTop();
       }
       lastWheelTime = now;
-
-      if (locked) {
-        event.preventDefault();
-        return;
-      }
-
+      const fresh = gestureStart >= lastMoveEnd; // el gesto empezó después del último movimiento
       const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
-      if (delta > 0 && inHome()) {
-        event.preventDefault();
-        goDown();
+
+      if (view === "home" || moving) {
+        event.preventDefault(); // la hora no se desplaza
+        if (view === "home" && !moving && delta > 0 && fresh) goDown();
         return;
       }
-      if (delta >= 0) return;
-
-      if (inHome()) {
-        if (gestureFromTasks) {
-          event.preventDefault();
-          jump(tasksTop()); // la inercia no puede llevar de las tareas a mitad de la hora
-        } else if (window.scrollY > 0) {
-          event.preventDefault();
-          goUp();
-        }
-      } else if (atTasksTop()) {
-        event.preventDefault(); // en el borde: solo un gesto que empiece aquí lleva a la hora
-        if (wheelStartedAtTop) goUp();
-      } else if (window.scrollY + delta < tasksTop()) {
-        event.preventDefault(); // el desplazamiento se queda justo en la franja superior
-        jump(tasksTop());
+      if (delta < 0 && atTop()) {
+        event.preventDefault();
+        if (gestureAtTop && fresh) goUp();
       }
     },
     { passive: false }
   );
 
-  let touchStartY = 0;
-  let touchStartedAtTop = false;
+  // Táctil: igual. Solo un gesto que empieza con la hoja arriba del todo y baja el dedo lleva a la hora.
+  let touchY = 0;
+  let touchAtTop = false;
 
   window.addEventListener(
     "touchstart",
     (event) => {
       if (isLocked()) return;
-      touching = true;
-      touchStartY = event.touches[0].clientY;
-      touchStartedAtTop = atTasksTop();
-      gestureFromTasks = window.scrollY >= tasksTop() - 2;
+      touchY = event.touches[0].clientY;
+      touchAtTop = view === "tasks" && atTop();
     },
     { passive: true }
   );
-
-  const touchEnd = () => {
-    touching = false;
-    scheduleSettle();
-  };
-  window.addEventListener("touchend", touchEnd, { passive: true });
-  window.addEventListener("touchcancel", touchEnd, { passive: true });
 
   window.addEventListener(
     "touchmove",
     (event) => {
       if (isLocked()) return;
-      const swipe = touchStartY - event.touches[0].clientY; // > 0: deslizar hacia arriba
-
-      if (locked || inHome()) {
+      const swipe = touchY - event.touches[0].clientY; // > 0: deslizar hacia arriba
+      if (view === "home" || moving) {
         if (event.cancelable) event.preventDefault();
-        if (locked) return;
-        if (gestureFromTasks) {
-          jump(tasksTop()); // se empezó en las tareas: no se pasa de la franja superior
-          return;
-        }
-        if (swipe > 8) goDown();
-        else if (swipe < -8 && window.scrollY > 0) goUp();
+        if (view === "home" && !moving && swipe > 8) goDown();
         return;
       }
-
-      if (swipe < -8 && touchStartedAtTop && atTasksTop()) {
+      if (swipe < -8 && touchAtTop && atTop()) {
         if (event.cancelable) event.preventDefault();
         goUp();
       }
@@ -877,23 +862,36 @@
     { passive: false }
   );
 
+  // Teclado: en la hora, las teclas de bajar pasan a las tareas; en las tareas, la hoja se desplaza con las flechas, Re/Av Pág,
+  // Inicio, Fin y espacio, y una pulsación nueva hacia arriba con la hoja arriba del todo lleva a la hora.
   window.addEventListener("keydown", (event) => {
-    if (isLocked() || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-
+    if (isLocked() || event.altKey || event.ctrlKey || event.metaKey) return;
     const target = event.target;
-    if (target.matches("input, textarea, select")) return;
-    const onPage = target === document.body || target === document.documentElement;
+    if (target.closest && target.closest("input, textarea, select, [contenteditable='true']")) return;
+    const onPage = target === document.body || target === document.documentElement || target === tasksSection;
 
-    const isDownKey = ["ArrowDown", "PageDown", "End"].includes(event.key) || (event.key === " " && onPage);
-    const isUpKey = ["ArrowUp", "PageUp", "Home"].includes(event.key);
+    const key = event.key;
+    const down = ["ArrowDown", "PageDown", "End"].includes(key) || (key === " " && onPage && !event.shiftKey);
+    const up = ["ArrowUp", "PageUp", "Home"].includes(key) || (key === " " && onPage && event.shiftKey);
 
-    if (isDownKey && inHome()) {
-      event.preventDefault();
-      goDown();
-    } else if (isUpKey && window.scrollY > 0 && (atTasksTop() || inHome())) {
-      event.preventDefault();
-      goUp();
+    if (view === "home") {
+      if (down) {
+        event.preventDefault();
+        goDown();
+      }
+      return;
     }
+    if (!onPage || !(down || up)) return;
+    event.preventDefault();
+    if (moving) return;
+    if (up && atTop()) {
+      if (!event.repeat) goUp();
+      return;
+    }
+    const page = tasksSection.clientHeight * 0.9;
+    if (key === "Home") tasksSection.scrollTo({ top: 0, behavior: "smooth" });
+    else if (key === "End") tasksSection.scrollTo({ top: tasksSection.scrollHeight, behavior: "smooth" });
+    else tasksSection.scrollBy({ top: key === "ArrowDown" ? 60 : key === "ArrowUp" ? -60 : down ? page : -page, behavior: "smooth" });
   });
 
   scrollHint.addEventListener("click", (event) => {
@@ -901,59 +899,18 @@
     goDown();
   });
 
-  // --progress (0 en el inicio, 1 en las tareas) quita poco a poco el redondeo de la hoja;
-  // las listas de tareas aparecen al pasar de la mitad del recorrido.
-  function updateOpen() {
-    const top = tasksTop();
-    const progress = top > 0 ? clamp(window.scrollY / top, 0, 1) : 1;
-    tasksSection.style.setProperty("--progress", progress.toFixed(3));
-    tasksSection.classList.toggle("open", progress > 0.5);
+  // Al recargar se vuelve a la pantalla en que se estaba (sin animación).
+  let startView = "home";
+  try {
+    if (location.hash === "#tasks" || sessionStorage.getItem(VIEW_KEY) === "tasks") startView = "tasks";
+  } catch {
+    /* se ignora */
   }
-  // La pantalla nunca se queda a medias entre la hora y las tareas: al acabar el movimiento se asienta en una
-  // de las dos. Y un gesto que empezó en las tareas no puede pasar de su franja superior (ni con la inercia).
-  let lastY = window.scrollY;
-  let direction = 0;
-  let settleTimer = 0;
-
-  function scheduleSettle() {
-    clearTimeout(settleTimer);
-    settleTimer = setTimeout(settle, 140);
+  if (startView === "tasks") {
+    document.documentElement.classList.add("no-transition");
+    applyView("tasks", 0);
+    requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.remove("no-transition")));
   }
-
-  function settle() {
-    if (isLocked()) return;
-    if (locked || touching) {
-      scheduleSettle(); // todavía hay movimiento: se vuelve a comprobar luego
-      return;
-    }
-    const top = tasksTop();
-    const y = window.scrollY;
-    if (y <= 1 || y >= top - 1) return; // ya está en la hora o en las tareas
-    const toTasks = gestureFromTasks || direction > 0 || (direction === 0 && y > top / 2);
-    goTo(toTasks ? top : 0);
-  }
-
-  window.addEventListener(
-    "scroll",
-    () => {
-      updateOpen();
-      const y = window.scrollY;
-      if (y !== lastY) direction = y > lastY ? 1 : -1;
-      lastY = y;
-      if (!locked && !isLocked() && gestureFromTasks && y < tasksTop() - 1) {
-        jump(tasksTop());
-        return;
-      }
-      scheduleSettle();
-    },
-    { passive: true }
-  );
-  window.addEventListener("resize", () => {
-    updateOpen();
-    scheduleSettle();
-  });
-  updateOpen();
-  scheduleSettle();
 
   /* ------------------------------------------------------------------------
      Inicio

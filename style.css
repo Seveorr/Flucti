@@ -76,17 +76,14 @@ body.ready {
 }
 
 html {
-  scroll-behavior: smooth;
-  overscroll-behavior-y: none;
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* Edge antiguo */
-}
-
-html::-webkit-scrollbar {
-  display: none; /* Chrome, Safari */
+  height: 100%;
+  overflow: hidden; /* la página no se desplaza: la hora está quieta y la hoja de tareas tiene su propio desplazamiento */
+  overscroll-behavior: none;
 }
 
 body {
+  height: 100%;
+  overflow: hidden;
   margin: 0;
   background: var(--bg);
   color: var(--ink);
@@ -118,19 +115,46 @@ body {
 }
 
 /* 3. Pantallas ------------------------------------------------------------- */
+/* Dos pantallas apiladas: la hora (quieta) y la hoja de tareas (con su propio desplazamiento). Al cambiar de una a otra
+   se mueven juntas, como si la hoja subiera y empujara la hora. */
+main {
+  --peek: calc(var(--space-m) + 2.75rem + 0.5rem + env(safe-area-inset-bottom, 0px)); /* lo que asoma la hoja sobre la hora */
+  --move: 0.8s; /* igual que MOVE_DURATION en script.js */
+  --move-ease: cubic-bezier(0.65, 0, 0.25, 1);
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
 .screen {
-  min-height: 100vh;
-  min-height: 100dvh;
+  position: absolute;
+  inset: 0;
 }
 
 .home {
-  position: relative;
+  z-index: 2; /* la flecha queda por encima de la hoja que asoma */
   display: grid;
   place-items: center;
   padding: var(--space-m);
+  pointer-events: none; /* deja pasar los clics a los botones de la hoja que asoman; solo la flecha los recibe */
+  transition: transform var(--move) var(--move-ease);
+}
+
+body.view-tasks .home {
+  transform: translateY(calc(-100% + var(--peek)));
+}
+
+.no-transition,
+.no-transition * {
+  transition: none !important;
 }
 
 .scroll-hint {
+  pointer-events: auto;
   position: absolute;
   bottom: calc(var(--space-m) + env(safe-area-inset-bottom, 0px));
   left: 50%;
@@ -142,7 +166,13 @@ body {
   color: var(--muted);
   border-radius: 50%;
   z-index: 2;
-  transition: color 0.2s var(--ease);
+  transition: color 0.2s var(--ease), opacity 0.4s var(--ease);
+}
+
+/* Solo se ve en la hora: en las tareas (donde asomaría arriba) desaparece */
+body.view-tasks .scroll-hint {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .scroll-hint:hover {
@@ -183,25 +213,34 @@ body {
 /* Hoja de tareas: rectángulo de ancho completo con esquinas superiores redondeadas.
    Empieza a la altura de la flecha (asoma en la pantalla de inicio) y llega al borde inferior. */
 .tasks {
+  z-index: 1; /* por encima del canvas del clima (z-index 0), que así queda tapado */
   display: flex;
   flex-direction: column; /* la versión queda siempre abajo del todo, aunque haya pocas tareas */
-  --peek: calc(var(--space-m) + 2.75rem + 0.5rem + env(safe-area-inset-bottom, 0px));
-  --sheet-radius: calc(1.75rem * (1 - var(--progress, 0))); /* se va a 0 al bajar a las tareas */
-  position: relative;
-  margin-top: calc(-1 * var(--peek));
-}
-
-.tasks::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 1; /* por encima del canvas del clima (z-index 0), que así queda tapado; por debajo del contenido (z-index 2) */
+  overflow-y: auto; /* la hoja se desplaza por su cuenta */
+  overscroll-behavior: none; /* sin rebotes ni arrastre hacia la hora */
+  scrollbar-width: none; /* Firefox */
   background: var(--sheet);
-  border-radius: var(--sheet-radius) var(--sheet-radius) 0 0;
+  border-radius: 1.75rem 1.75rem 0 0; /* se va a 0 al subir a las tareas */
+  transform: translateY(calc(100% - var(--peek))); /* en la hora solo asoma su borde superior */
+  transition: transform var(--move) var(--move-ease), border-radius var(--move) var(--move-ease);
+  outline: none;
 }
 
-body.ready .tasks::before {
-  transition: background-color 1.2s var(--ease);
+.tasks::-webkit-scrollbar {
+  display: none; /* Chrome, Safari */
+}
+
+body.ready .tasks {
+  transition: transform var(--move) var(--move-ease), border-radius var(--move) var(--move-ease), background-color 1.2s var(--ease);
+}
+
+body.view-tasks .tasks {
+  transform: none;
+  border-radius: 0;
+}
+
+html.modal-open .tasks {
+  overflow: hidden;
 }
 
 .clock,
@@ -214,6 +253,7 @@ body.ready .tasks::before {
   margin-inline: max(var(--gutter), env(safe-area-inset-left, 0px)) max(var(--gutter), env(safe-area-inset-right, 0px));
   padding-top: calc(4.5rem + env(safe-area-inset-top, 0px)); /* deja sitio a la franja de botones */
   padding-bottom: calc(var(--space-l) + env(safe-area-inset-bottom, 0px));
+  flex: none;
   opacity: 0;
   transform: translateY(6px);
   transition: opacity 0.3s var(--ease), transform 0.3s var(--ease);
@@ -308,7 +348,11 @@ body.ready .tasks::before {
   align-items: flex-start;
   gap: 1rem;
   padding: 0.9rem 0.6rem;
-  border-bottom: 1px solid var(--line);
+}
+
+/* La línea separadora va entre tareas: la última de cada lista no lleva. */
+.task + .task .task-content {
+  border-top: 1px solid var(--line);
 }
 
 .task-content .check {
@@ -364,8 +408,21 @@ body.ready .tasks::before {
 /* Tareas resaltadas (según las condiciones de su lista): un fondo uniforme del color elegido, sin franjas. */
 .task.is-highlighted .task-content {
   background: color-mix(in srgb, var(--hl) 14%, transparent);
-  border-bottom-color: transparent;
+  border-top-color: transparent;
   border-radius: var(--radius-m);
+}
+
+/* Las resaltadas no se tocan entre sí: llevan aire por arriba y por abajo, y sin línea a su lado. */
+.task.is-highlighted .task-row {
+  padding-block: 0.25rem;
+}
+
+.task.is-highlighted.leaving .task-row {
+  padding-block: 0;
+}
+
+.task.is-highlighted + .task .task-content {
+  border-top-color: transparent;
 }
 
 .task.is-highlighted.hl-blink .task-content {
@@ -535,7 +592,8 @@ input[type="checkbox"]:disabled {
 .topbar {
   position: absolute;
   z-index: 3;
-  top: calc(0.5rem + env(safe-area-inset-top, 0px) * var(--progress, 0));
+  top: 0.5rem;
+  transition: top var(--move) var(--move-ease);
   left: 0;
   right: 0;
   display: flex;
@@ -546,6 +604,10 @@ input[type="checkbox"]:disabled {
 
 .topbar .icon-btn {
   pointer-events: auto;
+}
+
+body.view-tasks .topbar {
+  top: calc(0.5rem + env(safe-area-inset-top, 0px));
 }
 
 .icon-btn {
@@ -1966,8 +2028,8 @@ html.is-dragging * {
   inset: 0;
   z-index: 20;
   overflow-y: auto;
-  overscroll-behavior: contain;
-  background: var(--sheet);
+  overscroll-behavior: none;
+  background: var(--surface); /* el mismo color que el recuadro de la lista */
   animation: full-in 0.2s var(--ease);
 }
 
@@ -1994,7 +2056,7 @@ body.ready .list-full {
   z-index: 2;
   margin: 0;
   padding: 0.5rem 0;
-  background: var(--sheet);
+  background: var(--surface);
 }
 
 @keyframes full-in {
@@ -2066,4 +2128,30 @@ body.ready .list-full {
 .menu-text small {
   font-size: var(--text-s);
   color: var(--muted);
+}
+
+/* 23. Requisitos en grupos (Y / O) y parámetro referente -------------------- */
+.req-group {
+  margin-top: var(--space-s);
+  padding: 0.5rem 0.9rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+}
+
+.req-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.req-group .hl-row:first-of-type {
+  border-top: 0;
+}
+
+.req-between {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: var(--space-s);
 }
